@@ -47,7 +47,7 @@ const getAuthHeaders = () => {
 
 // --- Main App Content ---
 function AppContent() {
-    const { isLoggedIn, cart, setCart } = useAuth();
+    const { isLoggedIn, cart, setCart, user } = useAuth();
     const [wishlist, setWishlist] = useState([]);
     const [wishlistIds, setWishlistIds] = useState(new Set());
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -61,6 +61,7 @@ function AppContent() {
     useEffect(() => {
         const fetchUserData = async () => {
             if (!isLoggedIn) {
+                setCart([]);
                 setWishlist([]);
                 setWishlistIds(new Set());
                 return;
@@ -72,22 +73,27 @@ function AppContent() {
                     axios.get(`${API_BASE_URL}/api/cart/wishlist`, config)
                 ]);
 
-                // ✅ FIX: Process the CartItemResponseDTO correctly
-                const formattedCart = cartResponse.data.map(item => ({
-                    id: item.productId,
-                    name: item.name,
-                    imageUrl: item.imageUrl,
-                    price: item.price,
-                    quantity: item.quantity,
-                }));
+                // ✅ FIX: Verify the API response is an array before using .map()
+                // This prevents crashes if the API returns an error object.
+                const formattedCart = Array.isArray(cartResponse.data)
+                    ? cartResponse.data.map(item => ({
+                        id: item.productId,
+                        name: item.name,
+                        imageUrl: item.imageUrl,
+                        price: item.price,
+                        quantity: item.quantity,
+                    }))
+                    : [];
 
-                const formattedWishlist = wishlistResponse.data.map(item => ({
-                    id: item.productId,
-                    name: item.name,
-                    imageUrl: item.imageUrl,
-                    price: item.price,
-                    quantity: item.quantity,
-                }));
+                const formattedWishlist = Array.isArray(wishlistResponse.data)
+                    ? wishlistResponse.data.map(item => ({
+                        id: item.productId,
+                        name: item.name,
+                        imageUrl: item.imageUrl,
+                        price: item.price,
+                        quantity: item.quantity,
+                    }))
+                    : [];
 
                 setCart(formattedCart);
                 setWishlist(formattedWishlist);
@@ -95,6 +101,10 @@ function AppContent() {
 
             } catch (error) {
                 console.error("Failed to fetch user data:", error);
+                // ✅ FIX: Clear state on error to avoid showing stale data.
+                setCart([]);
+                setWishlist([]);
+                setWishlistIds(new Set());
             }
         };
         fetchUserData();
@@ -109,7 +119,10 @@ function AppContent() {
         try {
             await axios.post(`${API_BASE_URL}/api/cart`, { productId, quantity, isWishlisted }, getAuthHeaders());
             return true;
-        } catch (error) { return false; }
+        } catch (error) {
+            toast.error("Could not update item. Please try again.");
+            return false;
+        }
     };
 
     const handleAddToCart = async (product) => {
@@ -122,27 +135,38 @@ function AppContent() {
     };
 
     const handleUpdateQuantity = async (productId, newQuantity) => {
-        if (newQuantity < 1) { handleRemoveFromCart(productId); return; }
+        if (newQuantity < 1) {
+            await handleRemoveFromCart(productId);
+            return;
+        }
         if (await updateItem(productId, newQuantity, false)) {
             setCart(prev => prev.map(item => item.id === productId ? { ...item, quantity: newQuantity } : item));
         }
     };
 
     const handleRemoveFromCart = async (productId) => {
-        await axios.delete(`${API_BASE_URL}/api/cart/${productId}`, getAuthHeaders());
-        setCart(prev => prev.filter(item => item.id !== productId));
-        toast.info("Item removed from cart.");
+        try {
+            await axios.delete(`${API_BASE_URL}/api/cart/${productId}`, getAuthHeaders());
+            setCart(prev => prev.filter(item => item.id !== productId));
+            toast.info("Item removed from cart.");
+        } catch (error) {
+            toast.error("Failed to remove item.");
+        }
     };
 
     const handleToggleWishlist = async (productId, product) => {
         const isCurrentlyWishlisted = wishlistIds.has(productId);
-        if (await updateItem(productId, 1, !isCurrentlyWishlisted)) {
+        // For wishlist, we also need to handle moving it from cart if it exists there
+        const cartItem = cart.find(item => item.id === productId);
+        const quantity = cartItem ? cartItem.quantity : 1;
+
+        if (await updateItem(productId, quantity, !isCurrentlyWishlisted)) {
             if (isCurrentlyWishlisted) {
                 setWishlist(prev => prev.filter(item => item.id !== productId));
                 setWishlistIds(prev => { const newSet = new Set(prev); newSet.delete(productId); return newSet; });
                 toast.info(`${product.name} removed from wishlist.`);
             } else {
-                setWishlist(prev => [...prev, product]);
+                setWishlist(prev => [...prev, { ...product, id: productId }]);
                 setWishlistIds(prev => new Set(prev).add(productId));
                 toast.success(`${product.name} added to wishlist!`);
             }

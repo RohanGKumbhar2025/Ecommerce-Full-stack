@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Search, Grid, List } from 'lucide-react';
 import FilterSidebar from '../components/FilterSidebar';
@@ -34,7 +34,8 @@ const Pagination = ({ currentPage, totalPages, onPageChange }) => {
 
 const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), cart }) => {
     const location = useLocation();
-    const [products, setProducts] = useState([]);
+    // ✅ FIX: Use a single source of truth for all products fetched from the API
+    const [allFetchedProducts, setAllFetchedProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [totalPages, setTotalPages] = useState(0);
@@ -48,7 +49,6 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
     const [showNew, setShowNew] = useState(false);
     const [showSale, setShowSale] = useState(false);
     const [showWishlist, setShowWishlist] = useState(false);
-    const [allFetchedProducts, setAllFetchedProducts] = useState([]);
 
     useEffect(() => {
         const fetchCategories = async () => {
@@ -70,21 +70,21 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                     page: currentPage - 1,
                     size: 9,
                     sort: sortOrder,
-                    searchTerm: searchTerm || null,
-                    categoryId: selectedCategory || null,
+                    // Send parameter only if it has a value
+                    ...(searchTerm && { searchTerm }),
+                    ...(selectedCategory && { categoryId: selectedCategory }),
                     minPrice: priceRange[0],
                     maxPrice: priceRange[1],
-                    isNew: showNew ? true : null,
-                    onSale: showSale ? true : null,
+                    ...(showNew && { isNew: true }),
+                    ...(showSale && { onSale: true }),
                 };
                 const response = await axios.get(`${API_BASE_URL}/api/products`, { params });
-                const fetchedProducts = response.data.content;
-                setAllFetchedProducts(fetchedProducts);
-                setProducts(fetchedProducts);
-                setTotalPages(response.data.totalPages);
-                setTotalElements(response.data.totalElements);
+                setAllFetchedProducts(response.data.content || []);
+                setTotalPages(response.data.totalPages || 0);
+                setTotalElements(response.data.totalElements || 0);
             } catch (error) {
                 console.error("Failed to fetch products:", error);
+                setAllFetchedProducts([]); // Reset to empty on error
             } finally {
                 setLoading(false);
             }
@@ -93,14 +93,15 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
         return () => clearTimeout(debounceTimer);
     }, [currentPage, sortOrder, searchTerm, selectedCategory, priceRange, showNew, showSale]);
 
-    useEffect(() => {
+    // ✅ FIX: Use useMemo to derive the displayed products.
+    // This is more efficient and cleaner than a separate useEffect.
+    const displayedProducts = useMemo(() => {
         if (showWishlist) {
-            const wishlistedProducts = allFetchedProducts.filter(p => wishlistIds.has(p.id));
-            setProducts(wishlistedProducts);
-        } else {
-            setProducts(allFetchedProducts);
+            return allFetchedProducts.filter(p => wishlistIds.has(p.id));
         }
+        return allFetchedProducts;
     }, [showWishlist, allFetchedProducts, wishlistIds]);
+
 
     if (loading) {
         return (
@@ -157,7 +158,7 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                     <div className="lg:col-span-3">
                         <div className="flex flex-col md:flex-row items-center justify-between mb-4 bg-white px-4 py-2.5 rounded-lg shadow-sm">
                             <span className="text-gray-600 font-medium text-sm">
-                                Showing {products.length} of {totalElements} results
+                                Showing {displayedProducts.length} of {totalElements} results
                             </span>
                             <div className="flex items-center gap-3 mt-2 md:mt-0">
                                 <div className="flex bg-gray-100 rounded-lg overflow-hidden">
@@ -179,14 +180,14 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                             </div>
                         </div>
 
-                        {products.length > 0 ? (
+                        {displayedProducts.length > 0 ? (
                             <div>
                                 <div className={
                                     viewMode === 'grid'
                                         ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 auto-rows-fr"
                                         : "space-y-4"
                                 }>
-                                    {products.map(product => (
+                                    {displayedProducts.map(product => (
                                         viewMode === 'grid' ? (
                                             <div key={product.id} className="h-full">
                                                 <ProductCard
