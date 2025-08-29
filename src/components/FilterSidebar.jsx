@@ -1,8 +1,10 @@
 import React from 'react';
 import { SlidersHorizontal, List, Percent, Sparkles, Heart } from 'lucide-react';
 
+// ✅ FIX: Set a default value for categories prop to an empty array.
+// This is the most robust way to prevent the '.map is not a function' error.
 const FilterSidebar = ({
-    categories,
+    categories = [], 
     selectedCategory,
     onCategorySelect,
     priceRange,
@@ -18,14 +20,13 @@ const FilterSidebar = ({
 }) => {
     
     const handlePriceChange = (e) => {
-        // A single slider can now control the max price
         setPriceRange([0, Number(e.target.value)]);
     };
 
     const clearFilters = () => {
         onCategorySelect(null);
         setPriceRange([0, 1000]);
-        setSortOrder('rating');
+        setSortOrder('rating-desc');
         setShowNew(false);
         setShowSale(false);
         setShowWishlist(false);
@@ -42,7 +43,7 @@ const FilterSidebar = ({
                 <div>
                     <h4 className="font-semibold text-gray-700 mb-4">Quick Filters</h4>
                     <div className="space-y-3">
-                         <button onClick={() => setShowNew(!showNew)} className={`filter-button ${showNew ? 'active' : ''}`}>
+                        <button onClick={() => setShowNew(!showNew)} className={`filter-button ${showNew ? 'active' : ''}`}>
                             <Sparkles size={16} /> New Products
                         </button>
                         <button onClick={() => setShowSale(!showSale)} className={`filter-button ${showSale ? 'active orange' : ''}`}>
@@ -55,21 +56,22 @@ const FilterSidebar = ({
                 </div>
                 
                 {/* Categories */}
-                 <div className="border-t pt-6">
+                <div className="border-t pt-6">
                     <h4 className="font-semibold text-gray-700 mb-4">Categories</h4>
                     <div className="space-y-2">
                         <button onClick={() => onCategorySelect(null)} className={`category-button ${!selectedCategory ? 'active' : ''}`}>
                             <span>All Categories</span>
                         </button>
-                        {categories.map((category) => (
+                        {/* ✅ FIX: The check ensures we only map if categories is a valid array */}
+                        {Array.isArray(categories) && categories.map((category) => (
                             <button key={category.id} onClick={() => onCategorySelect(category.id)} className={`category-button ${selectedCategory === category.id ? 'active' : ''}`}>
                                 <span>{category.name}</span>
-                                <span className="count-badge">{category.productCount || 0}</span>
+                                {/* Assuming you might add product counts to your category data later */}
+                                {category.productCount > 0 && <span className="count-badge">{category.productCount}</span>}
                             </button>
                         ))}
                     </div>
                 </div>
-
 
                 {/* Price Range Slider */}
                 <div className="border-t pt-6">
@@ -89,7 +91,7 @@ const FilterSidebar = ({
                     </div>
                 </div>
 
-                 {/* Sort Order */}
+                {/* Sort Order */}
                 <div className="border-t pt-6">
                     <h4 className="font-semibold text-gray-700 mb-4">Sort By</h4>
                     <select
@@ -97,7 +99,7 @@ const FilterSidebar = ({
                         onChange={(e) => setSortOrder(e.target.value)}
                         className="w-full cursor-pointer px-4 py-3 border border-gray-300 rounded-lg bg-white text-sm font-medium"
                     >
-                        <option value="rating">⭐ Highest Rated</option>
+                        <option value="rating-desc">⭐ Highest Rated</option>
                         <option value="price-asc">💰 Price: Low to High</option>
                         <option value="price-desc">💰 Price: High to Low</option>
                         <option value="name-asc">📝 Name: A to Z</option>
