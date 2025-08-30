@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -13,8 +13,37 @@ export const AuthProvider = ({ children }) => {
     const navigate = useNavigate();
     const [cart, setCart] = useState([]);
 
+    // --- START: ADDED CODE FOR PRODUCT CACHING ---
+    const [products, setProducts] = useState([]);
+    const [loadingProducts, setLoadingProducts] = useState(true);
+
+    const fetchProducts = useCallback(async () => {
+        // Only show the main loader on the very first fetch when the cache is empty.
+        if (products.length === 0) {
+            setLoadingProducts(true);
+        }
+        try {
+            // Fetch the first 8-9 products for the homepage view.
+            const response = await axios.get(`${API_BASE_URL}/api/products?size=8`);
+            if (response.data && response.data.content) {
+                setProducts(response.data.content);
+            }
+        } catch (error) {
+            console.error("Failed to fetch products for cache:", error);
+            toast.error("Could not load product data.");
+        } finally {
+            setLoadingProducts(false);
+        }
+    }, [products.length]); // The dependency ensures this function gets remade if products are ever cleared.
+
+    // Fetch products once on initial app load.
     useEffect(() => {
-        // This effect runs only once to check for a token in local storage
+        fetchProducts();
+    }, [fetchProducts]);
+    // --- END: ADDED CODE FOR PRODUCT CACHING ---
+
+
+    useEffect(() => {
         try {
             const token = localStorage.getItem('token');
             if (token) {
@@ -26,11 +55,9 @@ export const AuthProvider = ({ children }) => {
             }
         } catch (error) {
             console.error("Error initializing auth state from storage:", error);
-            // Clear corrupted data
             localStorage.removeItem('token');
             localStorage.removeItem('user');
         } finally {
-            // This is critical: mark the initial check as complete
             setLoading(false);
         }
     }, []);
@@ -75,7 +102,6 @@ export const AuthProvider = ({ children }) => {
         try {
             await axios.post(`${API_BASE_URL}/api/auth/signup`, { name, email, password, confirmPassword });
             toast.success("Account created successfully! Please log in.");
-            // Redirect to login for a cleaner flow after signup
             navigate('/login');
         } catch (error) {
             console.error('Signup failed:', error);
@@ -84,9 +110,14 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    // Expose the new product state and fetch function through the context provider.
+    const value = {
+        isLoggedIn, user, loading, cart, setCart, login, logout, signup,
+        products, loadingProducts, fetchProducts
+    };
+
     return (
-        <AuthContext.Provider value={{ isLoggedIn, user, loading, cart, setCart, login, logout, signup }}>
-            {/* ✅ FIX: Don't render any part of the app until the initial auth check is complete */}
+        <AuthContext.Provider value={value}>
             {!loading && children}
         </AuthContext.Provider>
     );
