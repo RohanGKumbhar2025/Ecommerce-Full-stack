@@ -13,35 +13,78 @@ export const AuthProvider = ({ children }) => {
     const navigate = useNavigate();
     const [cart, setCart] = useState([]);
 
-    // --- START: ADDED CODE FOR PRODUCT CACHING ---
-    const [products, setProducts] = useState([]);
+    // --- State for Caching and Advanced Fetching ---
+    const [products, setProducts] = useState([]); // For HomePage
     const [loadingProducts, setLoadingProducts] = useState(true);
 
-    const fetchProducts = useCallback(async () => {
-        // Only show the main loader on the very first fetch when the cache is empty.
-        if (products.length === 0) {
-            setLoadingProducts(true);
-        }
+    const [paginatedProducts, setPaginatedProducts] = useState([]); // For ProductsPage
+    const [productPageData, setProductPageData] = useState({ totalPages: 0, totalElements: 0 });
+    const [loadingPaginatedProducts, setLoadingPaginatedProducts] = useState(true);
+    const [lastFetched, setLastFetched] = useState(null); // ✅ For throttling API calls
+
+    // --- Effects for Initializing State from Storage ---
+    useEffect(() => {
+        // ✅ Persist Products: On initial load, try to get cached data from sessionStorage.
         try {
-            // Fetch the first 8-9 products for the homepage view.
-            const response = await axios.get(`${API_BASE_URL}/api/products?size=8`);
-            if (response.data && response.data.content) {
-                setProducts(response.data.content);
+            const cachedProducts = sessionStorage.getItem("paginatedProducts");
+            const cachedMeta = sessionStorage.getItem("productPageData");
+            if (cachedProducts && cachedMeta) {
+                setPaginatedProducts(JSON.parse(cachedProducts));
+                setProductPageData(JSON.parse(cachedMeta));
+                setLoadingPaginatedProducts(false); // We have data, so we're not "loading" initially
             }
         } catch (error) {
+            console.error("Failed to parse cached product data:", error);
+            sessionStorage.removeItem("paginatedProducts");
+            sessionStorage.removeItem("productPageData");
+        }
+    }, []);
+
+    const fetchProducts = useCallback(async () => {
+        if (products.length === 0) setLoadingProducts(true);
+        try {
+            const response = await axios.get(`${API_BASE_URL}/api/products?size=8`);
+            if (response.data?.content) setProducts(response.data.content);
+        } catch (error) {
             console.error("Failed to fetch products for cache:", error);
-            toast.error("Could not load product data.");
         } finally {
             setLoadingProducts(false);
         }
-    }, [products.length]); // The dependency ensures this function gets remade if products are ever cleared.
+    }, [products.length]);
+    
+    // ✅ API Optimization: This function now prevents re-fetching if data is less than 2 minutes old.
+    const fetchPaginatedProducts = useCallback(async (params) => {
+        if (lastFetched && (Date.now() - lastFetched < 120000)) {
+            // If the user is just re-visiting the page, don't re-fetch immediately.
+            // The existing (stale) data will be shown instantly.
+            return;
+        }
+        setLoadingPaginatedProducts(true);
+        try {
+            const response = await axios.get(`${API_BASE_URL}/api/products`, { params });
+            const newProducts = response.data.content || [];
+            const newPageData = {
+                totalPages: response.data.totalPages || 0,
+                totalElements: response.data.totalElements || 0,
+            };
+            setPaginatedProducts(newProducts);
+            setProductPageData(newPageData);
+            setLastFetched(Date.now()); // Update timestamp
+            
+            // ✅ Persist Products: Save the new data to sessionStorage.
+            sessionStorage.setItem("paginatedProducts", JSON.stringify(newProducts));
+            sessionStorage.setItem("productPageData", JSON.stringify(newPageData));
+        } catch (error) {
+            console.error("Failed to fetch paginated products:", error);
+            setPaginatedProducts([]);
+        } finally {
+            setLoadingPaginatedProducts(false);
+        }
+    }, [lastFetched]);
 
-    // Fetch products once on initial app load.
     useEffect(() => {
         fetchProducts();
     }, [fetchProducts]);
-    // --- END: ADDED CODE FOR PRODUCT CACHING ---
-
 
     useEffect(() => {
         try {
@@ -54,9 +97,8 @@ export const AuthProvider = ({ children }) => {
                 }
             }
         } catch (error) {
-            console.error("Error initializing auth state from storage:", error);
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
+            console.error("Error initializing auth state:", error);
+            localStorage.clear();
         } finally {
             setLoading(false);
         }
@@ -65,35 +107,29 @@ export const AuthProvider = ({ children }) => {
     const login = async (email, password) => {
         try {
             const response = await axios.post(`${API_BASE_URL}/api/auth/login`, { email, password });
-            
             const { token, id, name, roles } = response.data;
             const userData = { id, email, name, roles };
-
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(userData));
-
             setIsLoggedIn(true);
             setUser(userData);
             toast.success(`Welcome back, ${name}!`);
-            
-            if (roles && roles.includes('ROLE_ADMIN')) {
-                navigate('/admin/list');
-            } else {
-                navigate('/');
-            }
+            if (roles?.includes('ROLE_ADMIN')) navigate('/admin/list');
+            else navigate('/');
         } catch (error) {
-            console.error('Login failed:', error);
             toast.error(error.response?.data?.message || 'Login failed.');
             throw error;
         }
     };
-
+    
     const logout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        localStorage.clear();
+        sessionStorage.clear(); // ✅ Clear session cache on logout
         setIsLoggedIn(false);
         setUser(null);
-        setCart([]); // Clear cart state on logout
+        setCart([]);
+        setProducts([]); // Clear product caches
+        setPaginatedProducts([]);
         toast.info("You have been logged out.");
         navigate('/login');
     };
@@ -101,19 +137,18 @@ export const AuthProvider = ({ children }) => {
     const signup = async (name, email, password, confirmPassword) => {
         try {
             await axios.post(`${API_BASE_URL}/api/auth/signup`, { name, email, password, confirmPassword });
-            toast.success("Account created successfully! Please log in.");
+            toast.success("Account created! Please log in.");
             navigate('/login');
         } catch (error) {
-            console.error('Signup failed:', error);
             toast.error(error.response?.data?.message || 'Signup failed.');
             throw error;
         }
     };
 
-    // Expose the new product state and fetch function through the context provider.
     const value = {
         isLoggedIn, user, loading, cart, setCart, login, logout, signup,
-        products, loadingProducts, fetchProducts
+        products, loadingProducts, fetchProducts,
+        paginatedProducts, productPageData, loadingPaginatedProducts, fetchPaginatedProducts
     };
 
     return (
@@ -125,8 +160,6 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error('useAuth must be used within an AuthProvider');
-    }
+    if (!context) throw new Error('useAuth must be used within an AuthProvider');
     return context;
 };
