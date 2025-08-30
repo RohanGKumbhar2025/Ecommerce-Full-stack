@@ -1,53 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Star, Heart, ArrowLeft } from 'lucide-react';
-import axios from 'axios';
+import { Star, Heart, ArrowLeft, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext'; 
 import { toast } from 'react-toastify'; 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+// Skeleton component for a better loading experience
+const ProductDetailSkeleton = () => (
+    <div className="bg-gray-50 py-12 min-h-screen">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="h-6 w-32 bg-gray-300 rounded mb-6 animate-pulse"></div>
+            <div className="bg-white rounded-xl shadow-lg p-8 grid grid-cols-1 md:grid-cols-2 gap-12">
+                <div className="relative aspect-square bg-gray-200 rounded-xl animate-pulse"></div>
+                <div className="flex flex-col space-y-4">
+                    <div className="h-10 w-full bg-gray-300 rounded animate-pulse"></div>
+                    <div className="space-y-2">
+                        <div className="h-4 w-full bg-gray-200 rounded animate-pulse"></div>
+                        <div className="h-4 w-3/4 bg-gray-200 rounded animate-pulse"></div>
+                    </div>
+                    <div className="h-12 w-32 bg-gray-300 rounded animate-pulse"></div>
+                    <div className="flex space-x-4 mt-auto">
+                        <div className="flex-1 h-12 bg-gray-300 rounded-lg animate-pulse"></div>
+                        <div className="h-12 w-12 bg-gray-300 rounded-lg animate-pulse"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+);
 
-const ProductDetailPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), cart }) => {
+const ProductDetailPage = ({ 
+    onAddToCart, 
+    onToggleWishlist, 
+    wishlistIds = new Set(), 
+    cart,
+    pendingOperations = new Set(),
+    pendingWishlistOperations = new Set()
+}) => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { isLoggedIn } = useAuth(); // Get auth state
+    const { isLoggedIn, getProductDetails } = useAuth();
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchProduct = async () => {
-            try {
-                const response = await axios.get(`${API_BASE_URL}/api/products/${id}`);
-                setProduct(response.data);
-            } catch (error) {
-                console.error("Failed to fetch product details:", error);
-            } finally {
-                setLoading(false);
-            }
+            setLoading(true);
+            const productData = await getProductDetails(id);
+            setProduct(productData);
+            setLoading(false);
         };
-        fetchProduct();
-    }, [id]);
-
-    const handleAddToCartClick = () => {
-        if (!isLoggedIn) {
-            toast.error("Please log in to add items to your cart.");
-            navigate('/login');
-            return;
+        
+        if (id) {
+            fetchProduct();
         }
-        onAddToCart(product);
-    };
-
-    const handleToggleWishlistClick = () => {
-        if (!isLoggedIn) {
-            toast.error("Please log in to manage your wishlist.");
-            return;
-        }
-        onToggleWishlist(product.id, product);
-    };
-
+    }, [id, getProductDetails]);
 
     if (loading) {
-        return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+        return <ProductDetailSkeleton />;
     }
 
     if (!product) {
@@ -60,44 +69,43 @@ const ProductDetailPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Se
 
     const isWishlisted = wishlistIds.has(product.id);
     const isProductInCart = cart.some(item => item.id === product.id);
+    const isPendingCart = pendingOperations.has(product.id);
+    const isPendingWishlist = pendingWishlistOperations.has(product.id);
+
+    const handleAddToCartClick = () => {
+        if (!isLoggedIn) return toast.error("Please log in to add items.");
+        if (isPendingCart) return;
+        onAddToCart(product);
+    };
+
+    const handleToggleWishlistClick = () => {
+        if (!isLoggedIn) return toast.error("Please log in to manage your wishlist.");
+        if (isPendingWishlist) return;
+        onToggleWishlist(product.id, product);
+    };
 
     return (
-        <div className="bg-gray-50 py-12 min-h-screen">
+        <div className="bg-gray-50 py-12 min-h-screen animate-fade-in">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-                {/* Back Button */}
-                <button
-                    onClick={() => navigate('/products')}
-                    className="flex items-center gap-2 mb-6 text-gray-600 hover:text-indigo-600 font-semibold transition-colors"
-                >
+                <button onClick={() => navigate(-1)} className="flex items-center gap-2 mb-6 text-gray-600 hover:text-indigo-600 font-semibold">
                     <ArrowLeft size={20} />
-                    Back to Products
+                    Back
                 </button>
 
                 <div className="bg-white rounded-xl shadow-lg p-8 grid grid-cols-1 md:grid-cols-2 gap-12">
-                    {/* Product Image Section */}
                     <div className="relative aspect-square bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
-                        <img
-                            src={product.imageUrl}
-                            alt={product.name}
-                            className="w-full h-full object-contain mix-blend-multiply"
-                        />
-                        {!product.inStock && (
-                            <div className="absolute inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center rounded-xl">
-                                <span className="bg-gray-800 text-white px-4 py-2 rounded-lg font-semibold">Out of Stock</span>
-                            </div>
-                        )}
+                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain mix-blend-multiply" />
+                        {!product.inStock && ( <div className="absolute inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center rounded-xl"><span className="bg-gray-800 text-white px-4 py-2 rounded-lg font-semibold">Out of Stock</span></div> )}
                     </div>
 
-                    {/* Product Details Section */}
                     <div className="flex flex-col">
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                {/* ✅ FIX: Use categoryName from the DTO */}
-                                {product.categoryName && <span className="text-sm font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{product.categoryName}</span>}
+                                <span className="text-sm font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{product.categoryName}</span>
                                 <div className="flex items-center space-x-1">
                                     <Star size={18} className="text-yellow-400 fill-current" />
-                                    <span className="text-md text-gray-600 font-semibold">{product.rating || 'N/A'}</span>
-                                    <span className="text-sm text-gray-500">({product.reviews || '0'} reviews)</span>
+                                    <span className="text-md font-semibold">{product.rating}</span>
+                                    <span className="text-sm text-gray-500">({product.reviews} reviews)</span>
                                 </div>
                             </div>
                             <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 my-4">{product.name}</h1>
@@ -111,30 +119,12 @@ const ProductDetailPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Se
                             </div>
                         </div>
 
-                        {/* Action Buttons */}
                         <div className="flex space-x-4 mt-auto">
-                            <button
-                                onClick={handleAddToCartClick}
-                                disabled={!product.inStock || isProductInCart}
-                                className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all duration-200 ${
-                                    product.inStock
-                                        ? (isProductInCart
-                                           ? 'bg-green-600 text-white cursor-not-allowed'
-                                           : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:scale-105')
-                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                }`}
-                            >
-                                {isProductInCart ? 'Added to Cart' : 'Add to Cart'}
+                            <button onClick={handleAddToCartClick} disabled={!product.inStock || isProductInCart || isPendingCart} className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 disabled:cursor-not-allowed ${product.inStock ? (isProductInCart ? 'bg-green-600 text-white' : (isPendingCart ? 'bg-indigo-400 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white')) : 'bg-gray-300 text-gray-500'}`}>
+                                {isPendingCart ? <><Loader2 size={20} className="animate-spin" /> Adding...</> : (isProductInCart ? 'Added to Cart' : 'Add to Cart')}
                             </button>
-                            <button
-                                onClick={handleToggleWishlistClick}
-                                className={`p-3 rounded-lg transition-colors duration-200 border-2 ${
-                                    isWishlisted
-                                        ? 'bg-red-500 border-red-500 text-white'
-                                        : 'bg-white border-gray-300 text-gray-500 hover:border-red-500 hover:text-red-500'
-                                }`}
-                            >
-                                <Heart size={24} fill={isWishlisted ? 'currentColor' : 'none'} />
+                            <button onClick={handleToggleWishlistClick} disabled={isPendingWishlist} className={`p-3 rounded-lg border-2 transition-colors disabled:opacity-50 ${isWishlisted ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-gray-300 text-gray-500 hover:border-red-500 hover:text-red-500'}`}>
+                                {isPendingWishlist ? <Loader2 size={24} className="animate-spin" /> : <Heart size={24} fill={isWishlisted ? 'currentColor' : 'none'} />}
                             </button>
                         </div>
                     </div>

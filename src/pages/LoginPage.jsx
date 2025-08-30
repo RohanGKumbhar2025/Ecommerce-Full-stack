@@ -1,28 +1,34 @@
-// src/pages/LoginPage.js
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 
 const LoginPage = () => {
-    // 💡 Manage the login form state locally
     const [loginForm, setLoginForm] = useState({
         email: '',
         password: '',
     });
     
     const { login } = useAuth();
-    const navigate = useNavigate();
     const [error, setError] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const onLoginSubmit = async (e) => {
         e.preventDefault();
+        
+        if (isSubmitting) return;
+        
         setError(null);
+        setIsSubmitting(true);
+        
         try {
             await login(loginForm.email, loginForm.password);
-            // 💡 Navigate to the home page or another protected route on successful login
-            navigate('/');
+            // Navigation is now handled within the login function in AuthContext
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
     
@@ -32,37 +38,98 @@ const LoginPage = () => {
             ...prevForm,
             [name]: value
         }));
+        if (error) setError(null);
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg">
-                <h2 className="text-3xl font-bold text-center text-gray-800">Login</h2>
-                {error && <div className="text-red-500 text-center">{error}</div>}
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-xl border border-gray-100 animate-fade-in">
+                <div className="text-center">
+                    <h2 className="text-3xl font-bold text-gray-800">Welcome Back</h2>
+                    <p className="text-gray-600 mt-2">Sign in to your NexoShop account</p>
+                </div>
+
+                {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg text-center">
+                        <div className="font-medium">Login Failed</div>
+                        <div className="text-sm mt-1">{error}</div>
+                    </div>
+                )}
+
                 <form onSubmit={onLoginSubmit} className="space-y-6">
-                    <input 
-                        type="email" 
-                        name="email"
-                        value={loginForm.email} 
-                        onChange={handleChange}
-                        placeholder="Email Address" 
-                        required 
-                        className="w-full p-3 border rounded-lg" 
-                    />
-                    <input 
-                        type="password" 
-                        name="password"
-                        value={loginForm.password} 
-                        onChange={handleChange}
-                        placeholder="Password" 
-                        required 
-                        className="w-full p-3 border rounded-lg" 
-                    />
-                    <button type="submit" className="w-full py-3 bg-indigo-600 cursor-pointer text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Log In</button>
+                    <div className="space-y-4">
+                        <div>
+                            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                                Email Address
+                            </label>
+                            <input 
+                                id="email"
+                                type="email" 
+                                name="email"
+                                value={loginForm.email} 
+                                onChange={handleChange}
+                                placeholder="Enter your email address" 
+                                required 
+                                disabled={isSubmitting}
+                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+                            />
+                        </div>
+
+                        <div>
+                            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                                Password
+                            </label>
+                            <div className="relative">
+                                <input 
+                                    id="password"
+                                    type={showPassword ? "text" : "password"} 
+                                    name="password"
+                                    value={loginForm.password} 
+                                    onChange={handleChange}
+                                    placeholder="Enter your password" 
+                                    required 
+                                    disabled={isSubmitting}
+                                    className="w-full p-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    disabled={isSubmitting}
+                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 disabled:opacity-50 focus:outline-none"
+                                >
+                                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        disabled={isSubmitting}
+                        className="w-full py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <Loader2 size={20} className="animate-spin" />
+                                Signing In...
+                            </>
+                        ) : (
+                            'Sign In'
+                        )}
+                    </button>
                 </form>
-                <p className="text-center text-sm text-gray-600">
-                    Don't have an account? <Link to="/signup" className="font-semibold text-indigo-600 hover:underline">Sign up</Link>
-                </p>
+                
+                <div className="text-center pt-4 border-t border-gray-100">
+                    <p className="text-sm text-gray-600">
+                        Don't have an account? 
+                        <Link 
+                            to="/signup" 
+                            className="font-semibold text-indigo-600 hover:text-indigo-700 ml-1 transition-colors"
+                        >
+                            Create one here
+                        </Link>
+                    </p>
+                </div>
             </div>
         </div>
     );
