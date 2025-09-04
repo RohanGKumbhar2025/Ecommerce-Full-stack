@@ -1,32 +1,91 @@
-import React, { useState } from 'react';
-import { ShoppingCart, X } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { ShoppingCart, Loader2, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { toast } from 'react-toastify';
+import { useAuth } from '../context/AuthContext';
+import CartItemCard from '../components/CartItemCard';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
-const CartPage = ({ cart = [], onUpdateQuantity, onRemoveFromCart, setCart }) => {
+const CartPage = () => {
+    const { cart, setCart } = useAuth();
     const [isProcessing, setIsProcessing] = useState(false);
-    const [error, setError]         = useState(null);
+    const [error, setError] = useState(null);
     const navigate = useNavigate();
+    const [pendingOperations, setPendingOperations] = useState(new Set());
 
-    const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    // 🔹 Memoize cartTotal for performance optimization
+    const cartTotal = useMemo(() =>
+        cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    , [cart]);
 
-    const handleCheckout = async () => {
+    // 🔹 Use useCallback for memoized handlers
+    const handleUpdateQuantity = useCallback(async (productId, newQuantity) => {
+        if (newQuantity < 1) return;
+        if (pendingOperations.has(productId)) return;
+
+        setPendingOperations(prev => new Set(prev).add(productId));
+        const originalCart = [...cart];
+
+        setCart(cart.map(item =>
+            item.productId === productId ? { ...item, quantity: newQuantity } : item
+        ));
+
+        try {
+            const config = getAuthHeaders();
+            const payload = { productId, quantity: newQuantity, isWishlisted: false };
+            await axios.post(`${API_BASE_URL}/api/cart`, payload, config);
+        } catch (err) {
+            toast.error("Failed to update cart. Reverting.");
+            setCart(originalCart);
+        } finally {
+            setPendingOperations(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(productId);
+                return newSet;
+            });
+        }
+    }, [cart, pendingOperations, setCart]);
+
+    // 🔹 Use useCallback for memoized handlers
+    const handleRemoveFromCart = useCallback(async (productId) => {
+        if (pendingOperations.has(productId)) return;
+        setPendingOperations(prev => new Set(prev).add(productId));
+        
+        const originalCart = [...cart];
+        setCart(cart.filter(item => item.productId !== productId));
+
+        try {
+            const config = getAuthHeaders();
+            await axios.delete(`${API_BASE_URL}/api/cart/${productId}`, config);
+            toast.success("Item removed from cart.");
+        } catch (err) {
+            toast.error("Failed to remove item. Reverting.");
+            setCart(originalCart);
+        } finally {
+            setPendingOperations(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(productId);
+                return newSet;
+            });
+        }
+    }, [cart, pendingOperations, setCart]);
+
+    // 🔹 Use useCallback for memoized handlers
+    const handleCheckout = useCallback(async () => {
         setIsProcessing(true);
         setError(null);
         try {
             const config = getAuthHeaders();
-            // 1. Create the order, which will be associated with the logged-in user on the backend
             const response = await axios.post(`${API_BASE_URL}/api/checkout`, {}, config);
             const newOrder = response.data;
             
-            // 2. Redirect to the loading page, passing the new order and cart details
             navigate('/redirecting-to-payment', { 
                 state: { 
                     order: newOrder, 
@@ -35,59 +94,61 @@ const CartPage = ({ cart = [], onUpdateQuantity, onRemoveFromCart, setCart }) =>
                 } 
             });
         } catch (err) {
+            const errorMessage = err.response?.data?.message || "An error occurred during checkout. Please try again.";
             console.error("Checkout failed:", err);
-            setError("An error occurred during checkout. Please try again.");
+            setError(errorMessage);
             setIsProcessing(false);
         }
-    };
+    }, [cart, cartTotal, navigate]);
 
     return (
-        <div className="bg-gray-50 py-12 min-h-screen">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                <h1 className="text-3xl font-bold text-gray-800 mb-8">Your Shopping Cart</h1>
+        <div className="bg-gray-100 py-8 min-h-screen">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8" aria-live="polite">
+                <h1 className="text-3xl font-bold text-gray-800 mb-6 sm:mb-8">Your Shopping Cart</h1>
                 {cart.length === 0 ? (
                     <div className="text-center py-16 bg-white rounded-lg shadow-md">
                         <ShoppingCart size={48} className="mx-auto text-gray-400 mb-4" />
                         <h2 className="text-xl font-semibold text-gray-700">Your cart is empty</h2>
                         <p className="text-gray-500 mt-2">Start shopping to add items to your cart.</p>
-                        <Link to="/products" className="mt-6 inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700">
-                            Continue Shopping
+                        {/* 🔹 Empty Cart UX: Linking to popular/trending products */}
+                        <Link to="/products?sort=rating-desc" className="mt-6 inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">
+                            Discover Popular Products
                         </Link>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-lg shadow-md p-6">
-                        {/* Cart items list */}
-                        <div className="space-y-6">
+                    <div className="flex flex-col lg:flex-row gap-6">
+                        <div className="lg:w-3/4 space-y-4">
                             {cart.map(item => (
-                                <div key={item.id} className="flex items-center justify-between border-b pb-4 last:border-b-0">
-                                    <div className="flex items-center space-x-4">
-                                        <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover" />
-                                        <div>
-                                            <h3 className="font-semibold text-gray-800">{item.name}</h3>
-                                            <p className="text-sm text-gray-500">${item.price.toFixed(2)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center space-x-4">
-                                        <div className="flex items-center border rounded-lg">
-                                            <button onClick={() => onUpdateQuantity(item.id, item.quantity - 1)} disabled={item.quantity <= 1} className="px-3 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-50">-</button>
-                                            <span className="px-3">{item.quantity}</span>
-                                            <button onClick={() => onUpdateQuantity(item.id, item.quantity + 1)} className="px-3 py-1 text-gray-600 hover:bg-gray-100">+</button>
-                                        </div>
-                                        <p className="font-semibold w-20 text-right">${(item.price * item.quantity).toFixed(2)}</p>
-                                        <button onClick={() => onRemoveFromCart(item.id)} className="text-gray-400 hover:text-red-500"><X size={20} /></button>
-                                    </div>
-                                </div>
+                                <CartItemCard 
+                                    key={item.productId}
+                                    item={item}
+                                    pendingOperations={pendingOperations}
+                                    onUpdateQuantity={handleUpdateQuantity}
+                                    onRemoveFromCart={handleRemoveFromCart}
+                                />
                             ))}
                         </div>
                         {/* Checkout section */}
-                        <div className="mt-8 border-t pt-6">
-                            <div className="flex justify-between items-center text-lg font-semibold">
+                        <div className="lg:w-1/4 bg-white rounded-lg shadow-md p-6 sticky top-20 h-fit">
+                            <h2 className="text-xl font-bold text-gray-800 border-b pb-4 mb-4">Order Summary</h2>
+                            <div className="flex justify-between items-center text-lg font-semibold mb-6">
                                 <span>Total:</span>
                                 <span>${cartTotal.toFixed(2)}</span>
                             </div>
                             {error && <div className="mt-4 text-red-500 text-sm text-center">{error}</div>}
-                            <button onClick={handleCheckout} disabled={isProcessing} className={`w-full mt-6 py-3 rounded-lg font-semibold text-white transition-colors ${isProcessing ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                                {isProcessing ? 'Processing...' : 'Proceed to Checkout'}
+                            <button 
+                                onClick={handleCheckout} 
+                                disabled={isProcessing} 
+                                className={`w-full py-3 rounded-lg font-semibold text-white transition-colors flex items-center justify-center gap-2 ${isProcessing ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                            >
+                                {isProcessing ? (
+                                    <>
+                                        <Loader2 size={20} className="animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : (
+                                    'Proceed to Checkout'
+                                )}
                             </button>
                         </div>
                     </div>
