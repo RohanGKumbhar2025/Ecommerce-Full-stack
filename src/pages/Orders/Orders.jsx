@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { ShoppingBag, Package, User, Calendar, DollarSign } from 'lucide-react';
+import { ShoppingBag, Package, User, Calendar, DollarSign, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -10,28 +11,50 @@ const getAuthHeaders = () => {
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
-// --- START: SKELETON COMPONENT ---
-const OrderSkeleton = () => (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 animate-pulse">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="flex-1 w-full">
-                <div className="flex items-center gap-3">
-                    <div className="bg-gray-200 p-2 rounded-full h-10 w-10"></div>
-                    <div>
-                        <div className="h-5 bg-gray-300 rounded w-32 mb-1"></div>
-                        <div className="h-4 bg-gray-200 rounded-full w-20"></div>
-                    </div>
-                </div>
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-                    <div className="h-4 bg-gray-200 rounded w-28"></div>
-                    <div className="h-4 bg-gray-200 rounded w-24"></div>
-                    <div className="h-4 bg-gray-300 rounded w-16"></div>
-                </div>
-            </div>
+const OrderTableSkeleton = () => (
+    <div className="hidden md:block overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+                <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+                {Array.from({ length: 5 }).map((_, index) => (
+                    <tr key={index} className="animate-pulse">
+                        <td className="px-6 py-4 whitespace-nowrap"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+                        <td className="px-6 py-4 whitespace-nowrap"><div className="h-4 bg-gray-300 rounded w-24"></div></td>
+                        <td className="px-6 py-4 whitespace-nowrap"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+                        <td className="px-6 py-4 whitespace-nowrap"><div className="h-4 bg-gray-300 rounded w-16"></div></td>
+                        <td className="px-6 py-4 whitespace-nowrap"><div className="h-5 bg-gray-200 rounded-full w-20"></div></td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+);
+
+const OrderCardSkeleton = () => (
+    <div className="animate-pulse p-4 bg-white rounded-lg shadow space-y-4">
+        <div className="flex items-center justify-between">
+            <div className="h-5 bg-gray-300 rounded w-1/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/6"></div>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+            <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+            <div className="h-4 bg-gray-300 rounded w-1/4"></div>
+        </div>
+        <div className="flex items-center gap-2">
+            <div className="h-10 w-10 bg-gray-200 rounded-lg"></div>
+            <div className="h-10 w-10 bg-gray-200 rounded-lg"></div>
         </div>
     </div>
 );
-// --- END: SKELETON COMPONENT ---
 
 const Orders = () => {
     const [orders, setOrders] = useState([]);
@@ -73,34 +96,72 @@ const Orders = () => {
             </div>
       
             {loading ? (
-                <div className="space-y-4">
-                    {Array.from({ length: 5 }).map((_, index) => <OrderSkeleton key={index} />)}
-                </div>
+                <>
+                    <OrderTableSkeleton />
+                    <div className="md:hidden space-y-4">
+                        {Array.from({ length: 5 }).map((_, index) => <OrderCardSkeleton key={index} />)}
+                    </div>
+                </>
             ) : orders.length > 0 ? (
-                <div className="space-y-4">
-                    {orders.map(order => (
-                        <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-4 transition-shadow hover:shadow-md">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-indigo-100 p-2 rounded-full"><Package size={20} className="text-indigo-600" /></div>
-                                        <div>
-                                            <h3 className="font-bold text-gray-800">Order #{order.id}</h3>
-                                            <p className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block ${getStatusBadge(order.status || 'PENDING')}`}>
+                <>
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {orders.map(order => (
+                                    <tr key={order.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#{order.id}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.userName || 'N/A'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(order.orderDate).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">${order.totalAmount?.toFixed(2)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(order.status || 'PENDING')}`}>
                                                 {order.status || 'PENDING'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-                                        <div className="flex items-center text-gray-500"><User size={14} className="mr-2" /><span>{order.userName || 'N/A'}</span></div>
-                                        <div className="flex items-center text-gray-500"><Calendar size={14} className="mr-2" /><span>{new Date(order.orderDate).toLocaleDateString()}</span></div>
-                                        <div className="flex items-center text-gray-700 font-semibold"><DollarSign size={14} className="mr-2" /><span>{order.totalAmount?.toFixed(2)}</span></div>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-4">
+                        {orders.map(order => (
+                             <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-4 transition-shadow hover:shadow-md">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="font-bold text-gray-800">Order #{order.id}</h3>
+                                    <p className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block ${getStatusBadge(order.status || 'PENDING')}`}>
+                                        {order.status || 'PENDING'}
+                                    </p>
+                                </div>
+                                <div className="mt-2 text-sm space-y-1">
+                                    <div className="flex items-center text-gray-500"><User size={14} className="mr-2" /><span>{order.userName || 'N/A'}</span></div>
+                                    <div className="flex items-center text-gray-500"><Calendar size={14} className="mr-2" /><span>{new Date(order.orderDate).toLocaleDateString()}</span></div>
+                                    <div className="flex items-center text-gray-700 font-semibold"><DollarSign size={14} className="mr-2" /><span>{order.totalAmount?.toFixed(2)}</span></div>
+                                </div>
+                                <div className="mt-4 border-t pt-4 space-y-2">
+                                    <p className="text-sm font-semibold text-gray-700">Items:</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {order.orderItems.map(item => (
+                                            <div key={item.productId} className="flex-shrink-0">
+                                                <img src={item.imageUrl} alt={item.productName} className="w-12 h-12 rounded-lg object-cover" />
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                </>
             ) : (
                 <div className="text-center p-16 border-2 border-dashed border-gray-300 rounded-lg">
                     <ShoppingBag size={48} className="mx-auto text-gray-400 mb-4" />

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Lock, CreditCard, ArrowLeft, Smartphone, University, Shield, Star, Zap, CheckCircle } from 'lucide-react';
+import { Lock, CreditCard, ArrowLeft, Smartphone, University, Shield } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const getAuthHeaders = () => {
@@ -16,9 +17,8 @@ const StripeDummyPage = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
-    const { setCart } = useAuth();
+    const { setCart, fetchUserData } = useAuth(); // fetchUserData is retained for general context logic if needed elsewhere, but not used in handlePayment
 
-    // Use the actual order data passed from the previous page
     const { order, totalAmount, cartItems = [] } = location.state || {};
 
     const handlePayment = async (e) => {
@@ -39,10 +39,10 @@ const StripeDummyPage = () => {
             
             // 3. Navigate to the dynamic success page.
             navigate(`/payment-success/${order.id}`);
-
         } catch (error) {
-            console.error("Payment confirmation failed:", error);
-            toast.error("Payment failed. Please try again.");
+            toast.error(error.response?.data?.message || "Payment failed. Please try again.");
+        } finally {
+            // 🔹 FIX: Use finally to ensure processing state is reset
             setIsProcessing(false);
         }
     };
@@ -157,7 +157,7 @@ const StripeDummyPage = () => {
                 </div>
 
                 {/* Back button */}
-                <button onClick={() => navigate('/cart')} className="text-white/70 hover:text-white flex items-center justify-center mx-auto mt-6 transition-colors">
+                <button type="button" onClick={() => navigate('/cart')} className="text-white/70 hover:text-white flex items-center justify-center mx-auto mt-6 transition-colors">
                     <ArrowLeft size={16} className="mr-2" />
                     Return to Cart
                 </button>
@@ -166,10 +166,73 @@ const StripeDummyPage = () => {
     );
 };
 
-// Helper Components (no changes needed here)
-const TabButton = ({ icon, text, active, onClick }) => ( <button type="button" onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 p-4 border-b-2 transition-all duration-300 ${active ? 'border-blue-400 text-blue-400 bg-blue-500/10' : 'border-transparent text-white/60 hover:text-white/80 hover:bg-white/5'}`}> {icon} <span className="font-medium">{text}</span> </button> );
-const ModernCardForm = () => ( <div className="space-y-6"> <div className="grid grid-cols-1 gap-6"> <div> <label className="block text-sm font-medium text-white/80 mb-2">Card Number</label> <input type="text" placeholder="1234 5678 9012 3456" className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" /> </div> </div> <div className="grid grid-cols-2 gap-4"> <div> <label className="block text-sm font-medium text-white/80 mb-2">Expiry Date</label> <input type="text" placeholder="MM / YY" className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" /> </div> <div> <label className="block text-sm font-medium text-white/80 mb-2">CVC</label> <input type="text" placeholder="123" className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" /> </div> </div> <div> <label className="block text-sm font-medium text-white/80 mb-2">Cardholder Name</label> <input type="text" placeholder="John Doe" className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" /> </div> </div> );
-const ModernUpiForm = () => ( <div className="text-center p-6 bg-white/5 rounded-2xl border border-white/20"> <p className="text-white font-semibold mb-6">Pay with your favorite UPI app</p> <div className="flex justify-center items-center gap-6 mb-6"> <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center cursor-pointer hover:scale-110 transition-transform"> <span className="text-xs font-bold text-blue-600">GPay</span> </div> <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center cursor-pointer hover:scale-110 transition-transform"> <span className="text-xs font-bold text-white">PhonePe</span> </div> <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center cursor-pointer hover:scale-110 transition-transform"> <span className="text-xs font-bold text-white">Paytm</span> </div> </div> <input type="text" placeholder="Enter your UPI ID" className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" /> </div> );
-const ModernNetBankingForm = () => ( <div className="space-y-4"> <p className="text-white/70 text-sm">Select your bank for Net Banking payment</p> <select className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm"> <option value="" className="bg-gray-800">Choose your bank...</option> <option value="sbi" className="bg-gray-800">State Bank of India</option> <option value="hdfc" className="bg-gray-800">HDFC Bank</option> <option value="icici" className="bg-gray-800">ICICI Bank</option> <option value="axis" className="bg-gray-800">Axis Bank</option> <option value="kotak" className="bg-gray-800">Kotak Mahindra Bank</option> </select> </div> );
+// Helper Components (now with required attributes)
+const TabButton = ({ icon, text, active, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`flex-1 flex items-center justify-center gap-2 p-4 border-b-2 transition-all duration-300 ${active ? 'border-blue-400 text-blue-400 bg-blue-500/10' : 'border-transparent text-white/60 hover:text-white/80 hover:bg-white/5'}`}
+    >
+        {icon}
+        <span className="font-medium">{text}</span>
+    </button>
+);
+
+const ModernCardForm = () => (
+    <div className="space-y-6">
+        <div className="grid grid-cols-1 gap-6">
+            <div>
+                <label className="block text-sm font-medium text-white/80 mb-2">Card Number</label>
+                <input type="text" placeholder="1234 5678 9012 3456" required className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" />
+            </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm font-medium text-white/80 mb-2">Expiry Date</label>
+                <input type="text" placeholder="MM / YY" required className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-white/80 mb-2">CVC</label>
+                <input type="text" placeholder="123" required className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" />
+            </div>
+        </div>
+        <div>
+            <label className="block text-sm font-medium text-white/80 mb-2">Cardholder Name</label>
+            <input type="text" placeholder="John Doe" required className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" />
+        </div>
+    </div>
+);
+
+const ModernUpiForm = () => (
+    <div className="text-center p-6 bg-white/5 rounded-2xl border border-white/20">
+        <p className="text-white font-semibold mb-6">Pay with your favorite UPI app</p>
+        <div className="flex justify-center items-center gap-6 mb-6">
+            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
+                <span className="text-xs font-bold text-blue-600">GPay</span>
+            </div>
+            <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
+                <span className="text-xs font-bold text-white">PhonePe</span>
+            </div>
+            <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
+                <span className="text-xs font-bold text-white">Paytm</span>
+            </div>
+        </div>
+        <input type="text" placeholder="Enter your UPI ID" required className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm" />
+    </div>
+);
+
+const ModernNetBankingForm = () => (
+    <div className="space-y-4">
+        <p className="text-white/70 text-sm">Select your bank for Net Banking payment</p>
+        <select required className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm">
+            <option value="" className="bg-gray-800">Choose your bank...</option>
+            <option value="sbi" className="bg-gray-800">State Bank of India</option>
+            <option value="hdfc" className="bg-gray-800">HDFC Bank</option>
+            <option value="icici" className="bg-gray-800">ICICI Bank</option>
+            <option value="axis" className="bg-gray-800">Axis Bank</option>
+            <option value="kotak" className="bg-gray-800">Kotak Mahindra Bank</option>
+        </select>
+    </div>
+);
 
 export default StripeDummyPage;

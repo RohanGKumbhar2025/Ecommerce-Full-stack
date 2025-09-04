@@ -5,38 +5,30 @@ import { ShoppingCart, Heart, User, LogOut, Menu, X, Package } from 'lucide-reac
 import { useAuth } from '../context/AuthContext';
 import logo from '../assets/logo.png';
 
-// --- Utility Function for Navigation Link Styling ---
-// This function provides classes for active/inactive NavLinks, keeping the component code cleaner.
 const getNavClass = ({ isActive }) => 
     `transition-colors ${isActive ? "text-indigo-600 font-semibold" : "text-gray-600 hover:text-indigo-600"}`;
 
-// --- Main Navbar Component ---
 const Navbar = ({ cartCount, wishlistCount }) => {
     const { isLoggedIn, user, logout } = useAuth();
-    // The isMenuOpen state is now managed internally.
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
 
-    // Adds a subtle shadow effect when the user scrolls
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 10);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // Locks body scroll when the mobile menu is open for better usability
     useEffect(() => {
         document.body.style.overflow = isMenuOpen ? 'hidden' : 'unset';
         return () => { document.body.style.overflow = 'unset'; };
     }, [isMenuOpen]);
 
-    // Simplified logout handler, assuming the logout() function from context handles redirection.
     const handleLogout = () => {
         setIsMenuOpen(false);
         logout();
     };
     
-    // Closes mobile menu when a navigation link is clicked
     const handleLinkClick = () => setIsMenuOpen(false);
 
     return (
@@ -46,18 +38,14 @@ const Navbar = ({ cartCount, wishlistCount }) => {
                     <div className={`flex justify-between items-center transition-all duration-300 ${scrolled ? 'py-2' : 'py-3'}`}>
                         
                         <Link to="/" onClick={handleLinkClick} className="flex items-center gap-2 text-2xl font-bold text-gray-800" aria-label="NexoShop Home">
-                            {/* Added loading="lazy" for better performance */}
                             <img src={logo} alt="NexoShop Logo" className="h-8 w-auto" loading="lazy" />
                             <span className="hidden sm:inline">NexoShop</span>
                         </Link>
                         
-                        {/* --- Desktop Navigation --- */}
                         <DesktopNav user={user} />
 
-                        {/* --- Desktop Icons & User Info --- */}
                         <DesktopIcons isLoggedIn={isLoggedIn} user={user} handleLogout={handleLogout} cartCount={cartCount} wishlistCount={wishlistCount} />
 
-                        {/* --- Mobile Menu Button --- */}
                         <button className="md:hidden p-2 text-gray-700" onClick={() => setIsMenuOpen(true)} aria-label="Open menu">
                             <Menu size={24} />
                         </button>
@@ -65,7 +53,6 @@ const Navbar = ({ cartCount, wishlistCount }) => {
                 </div>
             </header>
             
-            {/* --- Mobile Menu Panel (Bottom Sheet) --- */}
             <MobileMenu 
                 isOpen={isMenuOpen} 
                 setIsOpen={setIsMenuOpen}
@@ -80,11 +67,8 @@ const Navbar = ({ cartCount, wishlistCount }) => {
     );
 };
 
-// --- Sub-components for better organization ---
-
 const DesktopNav = ({ user }) => (
     <nav className="hidden md:flex items-center gap-8 text-gray-600 font-medium">
-        {/* NavLink from react-router-dom v6+ automatically adds aria-current="page" to active links */}
         <NavLink to="/" className={getNavClass}>Home</NavLink>
         <NavLink to="/products" className={getNavClass}>Products</NavLink>
         <NavLink to="/about" className={getNavClass}>About</NavLink>
@@ -129,7 +113,6 @@ const DesktopIcons = ({ isLoggedIn, user, handleLogout, cartCount, wishlistCount
     </div>
 );
 
-// Framer Motion variants for the bottom sheet animation
 const sheetVariants = {
     hidden: { y: '100%' },
     visible: { y: '0%', transition: { type: 'spring', stiffness: 300, damping: 30 } },

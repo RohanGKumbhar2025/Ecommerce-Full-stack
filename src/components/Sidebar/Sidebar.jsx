@@ -1,10 +1,10 @@
-// src/components/Sidebar/Sidebar.jsx (Redesigned)
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { PlusSquare, ListOrdered, ShoppingBag, Home, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useSwipeable } from 'react-swipeable';
 
-const Sidebar = ({ isOpen, onClose }) => {
+const Sidebar = ({ isOpen, onClose, onOpen }) => {
     const { user, logout } = useAuth();
 
     const handleLinkClick = () => {
@@ -16,8 +16,15 @@ const Sidebar = ({ isOpen, onClose }) => {
     const activeLinkClass = "bg-indigo-100 text-indigo-700 font-semibold";
     const inactiveLinkClass = "hover:bg-gray-100 text-gray-700";
 
+    const handlers = useSwipeable({
+        onSwipedRight: () => onOpen(),
+        onSwipedLeft: () => onClose(),
+        preventScrollOnSwipe: true,
+        trackTouch: true
+    });
+
     return (
-        <>
+        <div {...handlers} className="touch-pan-y">
             {isOpen && (
                 <div
                     className="fixed inset-0 bg-black/50 z-40 md:hidden cursor-pointer"
@@ -31,7 +38,6 @@ const Sidebar = ({ isOpen, onClose }) => {
                 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
             >
                 <div className="p-4 flex flex-col h-full">
-                    {/* Header with User Info */}
                     <div className="flex items-center gap-3 mb-4 p-2 rounded-lg bg-gray-50 border">
                         <Shield size={32} className="text-indigo-600" />
                         <div>
@@ -42,7 +48,6 @@ const Sidebar = ({ isOpen, onClose }) => {
                     
                     <div className="border-b border-gray-200 mb-2"></div>
 
-                    {/* Navigation */}
                     <nav className="flex-grow flex flex-col mt-4 space-y-2">
                         <NavLink
                             to="/admin/add"
@@ -67,7 +72,6 @@ const Sidebar = ({ isOpen, onClose }) => {
                         </NavLink>
                     </nav>
 
-                    {/* Footer Links */}
                     <div className="mt-auto pt-4 border-t border-gray-200 space-y-2">
                         <NavLink
                             to="/"
@@ -85,7 +89,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                     </div>
                 </div>
             </aside>
-        </>
+        </div>
     );
 };
 

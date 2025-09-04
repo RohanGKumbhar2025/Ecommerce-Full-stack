@@ -11,9 +11,36 @@ const SignupPage = () => {
         confirmPassword: '',
     });
     
+    // Add state for validation errors
+    const [formErrors, setFormErrors] = useState({});
+
     const { signup } = useAuth();
-    const [error, setError] = useState(null);
+    const [apiError, setApiError] = useState(null); // Renamed for clarity
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const validateForm = () => {
+        const errors = {};
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!signupForm.name) {
+            errors.name = "Full name is required.";
+        }
+        if (!signupForm.email) {
+            errors.email = "Email address is required.";
+        } else if (!emailRegex.test(signupForm.email)) {
+            errors.email = "Invalid email format.";
+        }
+        if (!signupForm.password) {
+            errors.password = "Password is required.";
+        } else if (signupForm.password.length < 6) {
+            errors.password = "Password must be at least 6 characters long.";
+        }
+        if (signupForm.password !== signupForm.confirmPassword) {
+            errors.confirmPassword = "Passwords do not match.";
+        }
+        setFormErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -21,39 +48,34 @@ const SignupPage = () => {
             ...prevForm,
             [name]: value
         }));
-        if (error) setError(null);
+        // Clear API error on change
+        if (apiError) setApiError(null);
     };
 
     const onSignupSubmit = async (e) => {
         e.preventDefault();
         
         if (isSubmitting) return;
-        
-        setError(null);
+
+        // Perform client-side validation before submitting
+        if (!validateForm()) {
+            return;
+        }
+
+        setApiError(null);
         setIsSubmitting(true);
-
-        if (signupForm.password !== signupForm.confirmPassword) {
-            setError("Passwords do not match!");
-            setIsSubmitting(false);
-            return;
-        }
-
-        if (signupForm.password.length < 6) {
-            setError("Password must be at least 6 characters long!");
-            setIsSubmitting(false);
-            return;
-        }
 
         try {
             await signup(signupForm.name, signupForm.email, signupForm.password, signupForm.confirmPassword);
-            // Navigation is now handled by the signup function in AuthContext
         } catch (err) {
             const errorMessage = err.response?.data?.message || 'Signup failed. Please try again.';
-            setError(errorMessage);
+            setApiError(errorMessage);
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    const hasFormErrors = Object.keys(formErrors).length > 0;
 
     return (
         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
@@ -63,10 +85,10 @@ const SignupPage = () => {
                     <p className="text-gray-600 mt-2">Join NexoShop and start shopping!</p>
                 </div>
                 
-                {error && (
+                {apiError && (
                     <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg text-center">
                         <div className="font-medium">Signup Failed</div>
-                        <div className="text-sm mt-1">{error}</div>
+                        <div className="text-sm mt-1">{apiError}</div>
                     </div>
                 )}
 
@@ -81,11 +103,13 @@ const SignupPage = () => {
                                 name="name"
                                 value={signupForm.name} 
                                 onChange={handleChange} 
+                                onBlur={validateForm} // Validate on blur
                                 placeholder="Enter your full name" 
                                 required 
                                 disabled={isSubmitting}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50" 
+                                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50 ${formErrors.name ? 'border-red-500' : 'border-gray-300'}`} 
                             />
+                            {formErrors.name && <p className="mt-1 text-xs text-red-500">{formErrors.name}</p>}
                         </div>
                         
                         <div>
@@ -98,11 +122,13 @@ const SignupPage = () => {
                                 name="email"
                                 value={signupForm.email} 
                                 onChange={handleChange} 
+                                onBlur={validateForm} // Validate on blur
                                 placeholder="Enter your email address" 
                                 required 
                                 disabled={isSubmitting}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50" 
+                                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50 ${formErrors.email ? 'border-red-500' : 'border-gray-300'}`} 
                             />
+                            {formErrors.email && <p className="mt-1 text-xs text-red-500">{formErrors.email}</p>}
                         </div>
                         
                         <div>
@@ -115,12 +141,14 @@ const SignupPage = () => {
                                 name="password"
                                 value={signupForm.password} 
                                 onChange={handleChange} 
+                                onBlur={validateForm} // Validate on blur
                                 placeholder="Create a strong password" 
                                 required 
                                 disabled={isSubmitting}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50" 
+                                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50 ${formErrors.password ? 'border-red-500' : 'border-gray-300'}`} 
                             />
                             <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
+                            {formErrors.password && <p className="mt-1 text-xs text-red-500">{formErrors.password}</p>}
                         </div>
                         
                         <div>
@@ -133,16 +161,18 @@ const SignupPage = () => {
                                 name="confirmPassword"
                                 value={signupForm.confirmPassword} 
                                 onChange={handleChange} 
+                                onBlur={validateForm} // Validate on blur
                                 placeholder="Confirm your password" 
                                 required 
                                 disabled={isSubmitting}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50" 
+                                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:opacity-50 ${formErrors.confirmPassword ? 'border-red-500' : 'border-gray-300'}`} 
                             />
+                            {formErrors.confirmPassword && <p className="mt-1 text-xs text-red-500">{formErrors.confirmPassword}</p>}
                         </div>
 
                     <button 
                         type="submit" 
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || hasFormErrors}
                         className="w-full py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                         {isSubmitting ? (

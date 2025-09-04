@@ -26,8 +26,8 @@ const ProductListItem = ({ product, onAddToCart, onToggleWishlist, isWishlisted,
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col md:flex-row transform transition-all duration-300 hover:shadow-xl">
-            <div className="md:w-1/3 relative group">
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col md:flex-row transform transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 group">
+            <div className="md:w-1/3 relative">
                 <Link to={`/products/${product.id}`}>
                     <img
                         src={product.imageUrl}
@@ -71,7 +71,6 @@ const ProductListItem = ({ product, onAddToCart, onToggleWishlist, isWishlisted,
                 <div>
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-2">
-                            {/* ✅ CORRECTED LINE: Use product.categoryName */}
                             <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
                                 {product.categoryName}
                             </span>

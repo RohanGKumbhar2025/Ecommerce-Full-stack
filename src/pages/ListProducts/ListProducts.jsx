@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { Edit, Trash2, PlusCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Edit, Trash2, PlusCircle, ChevronLeft, ChevronRight, Loader2, DollarSign, Package } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -11,9 +11,8 @@ const getAuthHeaders = () => {
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
-// --- START: SKELETON COMPONENT ---
 const ProductListSkeleton = () => (
-    <div className="overflow-x-auto">
+    <div className="hidden lg:block overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
                 <tr>
@@ -48,7 +47,24 @@ const ProductListSkeleton = () => (
         </table>
     </div>
 );
-// --- END: SKELETON COMPONENT ---
+
+const ProductCardMobileSkeleton = () => (
+    <div className="animate-pulse p-4 bg-white rounded-lg shadow space-y-4">
+        <div className="flex items-center gap-4">
+            <div className="h-16 w-16 bg-gray-200 rounded-lg"></div>
+            <div className="flex-1 space-y-2">
+                <div className="h-5 bg-gray-300 rounded w-3/4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            </div>
+        </div>
+        <div className="flex justify-between items-center text-sm">
+            <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+            <div className="h-4 bg-gray-300 rounded w-1/6"></div>
+            <div className="h-8 bg-gray-200 rounded-full w-20"></div>
+            <div className="h-8 bg-gray-300 rounded-full w-8"></div>
+        </div>
+    </div>
+);
 
 const ListProducts = () => {
     const [list, setList] = useState([]);
@@ -129,9 +145,17 @@ const ListProducts = () => {
                 </Link>
             </div>
 
-            {loading ? <ProductListSkeleton /> : (
+            {loading ? (
                 <>
-                    <div className="overflow-x-auto">
+                    <ProductListSkeleton />
+                    <div className="lg:hidden space-y-4">
+                        {Array.from({ length: 10 }).map((_, index) => <ProductCardMobileSkeleton key={index} />)}
+                    </div>
+                </>
+            ) : (
+                <>
+                    {/* Desktop Table View */}
+                    <div className="hidden lg:block overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
@@ -168,6 +192,41 @@ const ListProducts = () => {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                    {/* Mobile Card View */}
+                    <div className="lg:hidden space-y-4">
+                        {list.length > 0 ? list.map(item => (
+                            <div key={item.id} className="bg-white rounded-lg shadow p-4 flex flex-col gap-4">
+                                <div className="flex items-center gap-4">
+                                    <img className="h-16 w-16 rounded-lg object-cover flex-shrink-0" src={item.imageUrl || "/placeholder.png"} alt={item.name} />
+                                    <div className="flex-1">
+                                        <h4 className="text-sm font-semibold text-gray-900">{item.name}</h4>
+                                        <p className="text-xs text-gray-500">{item.categoryName}</p>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <Link to={`/admin/edit/${item.id}`} className="inline-block p-2 text-indigo-600 hover:bg-indigo-100 rounded-full"><Edit className="h-5 w-5" /></Link>
+                                        <button onClick={() => confirmDelete(item)} className="p-2 text-red-600 hover:bg-red-100 rounded-full"><Trash2 className="h-5 w-5" /></button>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <p className="text-xs text-gray-500">Price</p>
+                                        <p className="font-semibold text-gray-800">${item.price?.toFixed(2) || '0.00'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Status</p>
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${item.inStock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                            {item.inStock ? 'In Stock' : 'Out of Stock'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )) : (
+                             <div className="text-center p-16 border-2 border-dashed border-gray-300 rounded-lg">
+                                <Package size={48} className="mx-auto text-gray-400 mb-4" />
+                                <h3 className="text-lg font-medium text-gray-800">No products found.</h3>
+                            </div>
+                        )}
                     </div>
                     {totalPages > 1 && (
                         <div className="flex items-center justify-between mt-4">
