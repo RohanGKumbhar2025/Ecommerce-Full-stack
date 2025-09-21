@@ -3,7 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://nexoshoppinge.onrender.com';
+
+// Add debugging at the start of your AuthContext.js:
+console.log('Environment Variables:', {
+  VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
+  API_BASE_URL: API_BASE_URL,
+  MODE: import.meta.env.MODE,
+  PROD: import.meta.env.PROD
+});
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
@@ -166,44 +174,63 @@ export const AuthProvider = ({ children }) => {
     };
     
     const fetchProducts = useCallback(async (params = { page: 0, size: 9 }) => {
-        const cacheKey = JSON.stringify(params);
+    const cacheKey = JSON.stringify(params);
 
-        if (pageCache.has(cacheKey)) {
-            const cached = pageCache.get(cacheKey);
-            if (Date.now() - cached.timestamp < 300000) { // 5-minute cache TTL
-                setProducts(cached.data.content);
-                setProductPageData({
-                    totalPages: cached.data.totalPages,
-                    totalElements: cached.data.totalElements,
-                });
-                setLoadingProducts(false);
-                return;
-            }
-        }
-
-        setLoadingProducts(true);
-        try {
-            const response = await axios.get(`${API_BASE_URL}/api/products`, { params });
-            const data = response.data;
-            if (data?.content) {
-                setProducts(data.content);
-                setProductPageData({
-                    totalPages: data.totalPages || 0,
-                    totalElements: data.totalElements || 0,
-                });
-
-                const newCache = new Map(pageCache);
-                newCache.set(cacheKey, { data, timestamp: Date.now() });
-                setPageCache(newCache);
-                sessionStorage.setItem("pageCache", JSON.stringify([...newCache]));
-            }
-        } catch (error) {
-            console.error("Failed to fetch products:", error);
-            setProducts([]);
-        } finally {
+    if (pageCache.has(cacheKey)) {
+        const cached = pageCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < 300000) {
+            setProducts(cached.data.content);
+            setProductPageData({
+                totalPages: cached.data.totalPages,
+                totalElements: cached.data.totalElements,
+            });
             setLoadingProducts(false);
+            return;
         }
-    }, [pageCache]);
+    }
+
+    setLoadingProducts(true);
+    try {
+        const fullUrl = `${API_BASE_URL}/api/products`;
+        console.log('Fetching products from:', fullUrl); // Debug log
+        console.log('With params:', params); // Debug log
+        
+        const response = await axios.get(fullUrl, { params });
+        const data = response.data;
+        
+        console.log('Products response:', data); // Debug log
+        
+        if (data?.content) {
+            setProducts(data.content);
+            setProductPageData({
+                totalPages: data.totalPages || 0,
+                totalElements: data.totalElements || 0,
+            });
+
+            const newCache = new Map(pageCache);
+            newCache.set(cacheKey, { data, timestamp: Date.now() });
+            setPageCache(newCache);
+            sessionStorage.setItem("pageCache", JSON.stringify([...newCache]));
+            
+            console.log(`Successfully loaded ${data.content.length} products`);
+        } else {
+            console.error('Invalid response format:', data);
+            setProducts([]);
+        }
+    } catch (error) {
+        console.error("Failed to fetch products:", error);
+        console.error("Error details:", {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+            url: `${API_BASE_URL}/api/products`
+        });
+        setProducts([]);
+        toast.error(`Failed to load products: ${error.response?.status || 'Network error'}`);
+    } finally {
+        setLoadingProducts(false);
+    }
+}, [pageCache])
 
     useEffect(() => {
         // This initial fetch is primarily for the home page's featured products.
