@@ -5,86 +5,227 @@ import { toast } from 'react-toastify';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://nexoshoppinge.onrender.com';
 
-// Add debugging at the start of your AuthContext.js:
-console.log('Environment Variables:', {
-  VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
-  API_BASE_URL: API_BASE_URL,
-  MODE: import.meta.env.MODE,
-  PROD: import.meta.env.PROD
-});
+console.log('API Base URL:', API_BASE_URL);
+
+// Configure axios for slow backend servers
+axios.defaults.timeout = 60000; // 60 seconds for slow servers
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+axios.defaults.headers.common['Accept'] = 'application/json';
+
+// Simple retry utility for failed requests
+const retryRequest = async (requestFn, maxRetries = 3) => {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await requestFn();
+        } catch (error) {
+            lastError = error;
+            
+            const shouldRetry =
+                error.code === 'ECONNABORTED' ||
+                error.code === 'ERR_NETWORK' ||
+                (error.response && error.response.status >= 500);
+            
+            if (attempt === maxRetries || !shouldRetry) {
+                break;
+            }
+            
+            // Wait before retry with exponential backoff
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    
+    throw lastError;
+};
+
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-    // Core Auth State
+    // Core state
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
 
-    // App-Wide State
+    // App data
     const [cart, setCart] = useState([]);
     const [wishlistItems, setWishlistItems] = useState([]);
     const [wishlistIds, setWishlistIds] = useState(new Set());
-
-    // Consolidated Product State
     const [products, setProducts] = useState([]);
-    const [loadingProducts, setLoadingProducts] = useState(true);
+    const [loadingProducts, setLoadingProducts] = useState(false);
     const [productPageData, setProductPageData] = useState({ totalPages: 0, totalElements: 0 });
-    
-    // --- Caching States ---
-    const [productDetailCache, setProductDetailCache] = useState(new Map());
+    const [categories, setCategories] = useState([]);
+    const [loadingCategories, setLoadingCategories] = useState(false);
+    const [selectedGlobalCategory, setSelectedGlobalCategory] = useState(null);
+
+    // Simple caching
+    const [productCache, setProductCache] = useState(new Map());
     const [pageCache, setPageCache] = useState(new Map());
 
-
-    // Initialize state from storage
+    // Initialize from localStorage
     useEffect(() => {
         try {
             const token = localStorage.getItem('token');
-            if (token) {
-                const storedUser = JSON.parse(localStorage.getItem('user'));
-                if (storedUser) {
-                    setUser(storedUser);
-                    setIsLoggedIn(true);
-                }
-            }
-            const cachedDetails = sessionStorage.getItem("productDetailCache");
-            if (cachedDetails) {
-                setProductDetailCache(new Map(JSON.parse(cachedDetails)));
-            }
-            const cachedPages = sessionStorage.getItem("pageCache");
-            if (cachedPages) {
-                setPageCache(new Map(JSON.parse(cachedPages)));
+            const storedUser = localStorage.getItem('user');
+            
+            if (token && storedUser) {
+                const userData = JSON.parse(storedUser);
+                setUser(userData);
+                setIsLoggedIn(true);
             }
         } catch (error) {
-            console.error("Error initializing state from storage:", error);
+            console.error('Error initializing auth state:', error);
             localStorage.clear();
-            sessionStorage.clear();
         } finally {
             setLoading(false);
         }
     }, []);
 
-    const getProductDetails = useCallback(async (productId) => {
-        const cacheKey = productId.toString();
-        if (productDetailCache.has(cacheKey)) {
-            const cached = productDetailCache.get(cacheKey);
-            if (Date.now() - cached.timestamp < 300000) { // 5-minute cache TTL
-                return cached.data;
+    // Fetch categories
+    const fetchCategories = useCallback(async () => {
+        if (loadingCategories || categories.length > 0) return;
+        
+        setLoadingCategories(true);
+        try {
+            const response = await retryRequest(() =>
+                axios.get(`${API_BASE_URL}/api/categories`, { timeout: 45000 })
+            );
+            setCategories(response.data || []);
+        } catch (error) {
+            console.error('Failed to fetch categories:', error);
+            toast.error('Failed to load categories');
+        } finally {
+            setLoadingCategories(false);
+        }
+    }, [categories.length, loadingCategories]);
+
+    // Fetch products with caching
+    const fetchProducts = useCallback(async (params = { page: 0, size: 9 }) => {
+        const cacheKey = JSON.stringify(params);
+        
+        // Check cache first
+        if (pageCache.has(cacheKey)) {
+            const cached = pageCache.get(cacheKey);
+            const isExpired = Date.now() - cached.timestamp > 10 * 60 * 1000; // 10 minutes
+            
+            if (!isExpired) {
+                setProducts(cached.data.content || []);
+                setProductPageData({
+                    totalPages: cached.data.totalPages || 0,
+                    totalElements: cached.data.totalElements || 0,
+                });
+                return { success: true, data: cached.data, fromCache: true };
             }
         }
+
+        setLoadingProducts(true);
+
         try {
-            const { data } = await axios.get(`${API_BASE_URL}/api/products/${productId}`);
-            const newCache = new Map(productDetailCache);
+            const response = await retryRequest(() =>
+                axios.get(`${API_BASE_URL}/api/products`, {
+                    params,
+                    timeout: 45000
+                })
+            );
+
+            const data = response.data;
+            const products = data.content || [];
+            
+            setProducts(products);
+            setProductPageData({
+                totalPages: data.totalPages || 0,
+                totalElements: data.totalElements || 0,
+            });
+
+            // Cache the result
+            const newCache = new Map(pageCache);
             newCache.set(cacheKey, { data, timestamp: Date.now() });
-            setProductDetailCache(newCache);
-            sessionStorage.setItem("productDetailCache", JSON.stringify([...newCache]));
-            return data;
+            
+            // Limit cache size
+            if (newCache.size > 20) {
+                const oldestKey = Array.from(newCache.keys())[0];
+                newCache.delete(oldestKey);
+            }
+            
+            setPageCache(newCache);
+
+            return { success: true, data };
+
+        } catch (error) {
+            console.error('Failed to fetch products:', error);
+            
+            // Try cache as fallback
+            if (pageCache.has(cacheKey)) {
+                const cached = pageCache.get(cacheKey);
+                setProducts(cached.data.content || []);
+                setProductPageData({
+                    totalPages: cached.data.totalPages || 0,
+                    totalElements: cached.data.totalElements || 0,
+                });
+                toast.warn('Using cached results due to connection issues');
+                return { success: true, data: cached.data, fromCache: true };
+            }
+            
+            setProducts([]);
+            setProductPageData({ totalPages: 0, totalElements: 0 });
+            return { success: false, error: error.message };
+        } finally {
+            setLoadingProducts(false);
+        }
+    }, [pageCache]);
+
+    // Get product details with caching
+    const getProductDetails = useCallback(async (productId) => {
+        const cacheKey = productId.toString();
+        
+        // Check cache
+        if (productCache.has(cacheKey)) {
+            const cached = productCache.get(cacheKey);
+            const isExpired = Date.now() - cached.timestamp > 15 * 60 * 1000; // 15 minutes
+            
+            if (!isExpired) {
+                return cached.data; // Return the actual product data, not wrapped in success object
+            }
+        }
+
+        try {
+            const response = await retryRequest(() =>
+                axios.get(`${API_BASE_URL}/api/products/${productId}`, { timeout: 30000 })
+            );
+
+            const productData = response.data;
+
+            // Cache the result
+            const newCache = new Map(productCache);
+            newCache.set(cacheKey, { data: productData, timestamp: Date.now() });
+            
+            // Limit cache size
+            if (newCache.size > 50) {
+                const oldestKey = Array.from(newCache.keys())[0];
+                newCache.delete(oldestKey);
+            }
+            
+            setProductCache(newCache);
+
+            return productData; // Return the actual product data directly
         } catch (error) {
             console.error(`Failed to fetch product ${productId}:`, error);
-            return null;
+            
+            // Fallback to cache
+            if (productCache.has(cacheKey)) {
+                const cached = productCache.get(cacheKey);
+                toast.warn('Using cached product data due to connection issues');
+                return cached.data;
+            }
+            
+            toast.error('Failed to load product details');
+            return null; // Return null on error
         }
-    }, [productDetailCache]);
+    }, [productCache]);
 
+    // Fetch user data (cart and wishlist)
     const fetchUserData = useCallback(async () => {
         if (!isLoggedIn) {
             setCart([]);
@@ -92,163 +233,176 @@ export const AuthProvider = ({ children }) => {
             setWishlistIds(new Set());
             return;
         }
+
+        const token = localStorage.getItem('token');
+        const config = {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 30000
+        };
+
         try {
-            const config = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
-            const [cartRes, wishlistRes] = await Promise.all([
-                axios.get(`${API_BASE_URL}/api/cart`, config),
-                axios.get(`${API_BASE_URL}/api/cart/wishlist`, config),
+            // Fetch cart and wishlist in parallel
+            const [cartResponse, wishlistResponse] = await Promise.allSettled([
+                retryRequest(() => axios.get(`${API_BASE_URL}/api/cart`, config)),
+                retryRequest(() => axios.get(`${API_BASE_URL}/api/cart/wishlist`, config))
             ]);
 
-            const cartItems = Array.isArray(cartRes.data) ? cartRes.data : [];
-            const rawWishlistItems = Array.isArray(wishlistRes.data) ? wishlistRes.data : [];
+            // Handle cart
+            if (cartResponse.status === 'fulfilled') {
+                const cartItems = Array.isArray(cartResponse.value.data) ? cartResponse.value.data : [];
+                setCart(cartItems.map(item => ({ ...item, id: item.productId })));
+            }
 
-            const enrichedWishlistItems = await Promise.all(
-                rawWishlistItems.map(async (item) => {
-                    const freshProduct = await getProductDetails(item.productId);
-                    return freshProduct ? { ...freshProduct, id: freshProduct.id } : null;
-                })
-            );
-
-            setCart(cartItems.map(item => ({ ...item, id: item.productId })));
-            const validWishlistItems = enrichedWishlistItems.filter(Boolean);
-            setWishlistItems(validWishlistItems);
-            setWishlistIds(new Set(validWishlistItems.map(item => item.id)));
+            // Handle wishlist
+            if (wishlistResponse.status === 'fulfilled') {
+                const wishlistItems = Array.isArray(wishlistResponse.value.data) ? wishlistResponse.value.data : [];
+                setWishlistItems(wishlistItems);
+                setWishlistIds(new Set(wishlistItems.map(item => item.id)));
+            }
 
         } catch (error) {
-            console.error("Failed to fetch user data:", error);
+            console.error('Failed to fetch user data:', error);
+            toast.error('Failed to sync user data');
         }
-    }, [isLoggedIn, getProductDetails]);
+    }, [isLoggedIn]);
 
-    useEffect(() => {
-        fetchUserData();
-    }, [fetchUserData]);
-
+    // Auth functions
     const login = async (email, password) => {
         try {
-            const response = await axios.post(`${API_BASE_URL}/api/auth/login`, { email, password });
+            const response = await retryRequest(() =>
+                axios.post(`${API_BASE_URL}/api/auth/login`, { email, password }, { timeout: 30000 })
+            );
+
             const { token, id, name, roles } = response.data;
             const userData = { id, email, name, roles };
+
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(userData));
+
             setIsLoggedIn(true);
             setUser(userData);
+
             toast.success(`Welcome back, ${name}!`);
-            if (roles?.includes('ROLE_ADMIN')) navigate('/admin/list');
-            else navigate('/');
+
+            if (roles?.includes('ROLE_ADMIN')) {
+                navigate('/admin/list');
+            } else {
+                navigate('/');
+            }
+
+            // Fetch user data after login
+            setTimeout(() => fetchUserData(), 1000);
+
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Login failed.');
+            const errorMessage = error.response?.data?.message || 'Login failed. Please try again.';
+            toast.error(errorMessage);
             throw error;
         }
     };
 
     const signup = async (name, email, password, confirmPassword) => {
         try {
-            const response = await axios.post(`${API_BASE_URL}/api/auth/signup`, { name, email, password, confirmPassword });
+            const response = await retryRequest(() =>
+                axios.post(`${API_BASE_URL}/api/auth/signup`, {
+                    name, email, password, confirmPassword
+                }, { timeout: 30000 })
+            );
+
             const { token, id, roles } = response.data;
             const userData = { id, email, name, roles };
+
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(userData));
+
             setIsLoggedIn(true);
             setUser(userData);
+
             toast.success(`Welcome, ${name}!`);
-            if (roles?.includes('ROLE_ADMIN')) navigate('/admin/list');
-            else navigate('/');
+
+            if (roles?.includes('ROLE_ADMIN')) {
+                navigate('/admin/list');
+            } else {
+                navigate('/');
+            }
+
+            // Fetch user data after signup
+            setTimeout(() => fetchUserData(), 1000);
+
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Signup failed.');
+            const errorMessage = error.response?.data?.message || 'Signup failed. Please try again.';
+            toast.error(errorMessage);
             throw error;
         }
     };
-    
+
     const logout = () => {
         localStorage.clear();
-        sessionStorage.clear();
         setIsLoggedIn(false);
         setUser(null);
         setCart([]);
         setWishlistItems([]);
         setWishlistIds(new Set());
-        setProductDetailCache(new Map());
-        setPageCache(new Map()); // Clear page cache on logout
-        toast.info("You have been logged out.");
+        setProducts([]);
+        setCategories([]);
+        setSelectedGlobalCategory(null);
+        setProductCache(new Map());
+        setPageCache(new Map());
+        
+        toast.info('You have been logged out');
         navigate('/login');
     };
-    
-    const fetchProducts = useCallback(async (params = { page: 0, size: 9 }) => {
-    const cacheKey = JSON.stringify(params);
 
-    if (pageCache.has(cacheKey)) {
-        const cached = pageCache.get(cacheKey);
-        if (Date.now() - cached.timestamp < 300000) {
-            setProducts(cached.data.content);
-            setProductPageData({
-                totalPages: cached.data.totalPages,
-                totalElements: cached.data.totalElements,
-            });
-            setLoadingProducts(false);
-            return;
-        }
-    }
-
-    setLoadingProducts(true);
-    try {
-        const fullUrl = `${API_BASE_URL}/api/products`;
-        console.log('Fetching products from:', fullUrl); // Debug log
-        console.log('With params:', params); // Debug log
-        
-        const response = await axios.get(fullUrl, { params });
-        const data = response.data;
-        
-        console.log('Products response:', data); // Debug log
-        
-        if (data?.content) {
-            setProducts(data.content);
-            setProductPageData({
-                totalPages: data.totalPages || 0,
-                totalElements: data.totalElements || 0,
-            });
-
-            const newCache = new Map(pageCache);
-            newCache.set(cacheKey, { data, timestamp: Date.now() });
-            setPageCache(newCache);
-            sessionStorage.setItem("pageCache", JSON.stringify([...newCache]));
-            
-            console.log(`Successfully loaded ${data.content.length} products`);
-        } else {
-            console.error('Invalid response format:', data);
-            setProducts([]);
-        }
-    } catch (error) {
-        console.error("Failed to fetch products:", error);
-        console.error("Error details:", {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-            url: `${API_BASE_URL}/api/products`
-        });
-        setProducts([]);
-        toast.error(`Failed to load products: ${error.response?.status || 'Network error'}`);
-    } finally {
-        setLoadingProducts(false);
-    }
-}, [pageCache])
-
+    // Initialize categories on app start
     useEffect(() => {
-        // This initial fetch is primarily for the home page's featured products.
-        // The ProductsPage will trigger its own fetches with its specific parameters.
-        if (products.length === 0) {
-            fetchProducts({ page: 0, size: 8, sort: 'rating-desc' });
+        if (!loading && categories.length === 0) {
+            setTimeout(() => fetchCategories(), 1000);
         }
-    }, [fetchProducts, products.length]);
+    }, [loading, categories.length, fetchCategories]);
 
     const value = {
-        isLoggedIn, user, loading, cart, setCart, login, logout, signup,
-        products, loadingProducts, fetchProducts,
+        // Auth state
+        isLoggedIn,
+        user,
+        loading,
+        login,
+        logout,
+        signup,
+        
+        // Cart and wishlist
+        cart,
+        setCart,
+        wishlistItems,
+        setWishlistItems,
+        wishlistIds,
+        setWishlistIds,
+        fetchUserData,
+        
+        // Products
+        products,
+        loadingProducts,
+        fetchProducts,
         productPageData,
-        wishlistItems, setWishlistItems, wishlistIds, setWishlistIds,
-        getProductDetails, fetchUserData
+        getProductDetails,
+        
+        // Categories
+        categories,
+        loadingCategories,
+        fetchCategories,
+        selectedGlobalCategory,
+        setSelectedGlobalCategory
     };
 
-    return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+    return (
+        <AuthContext.Provider value={value}>
+            {!loading && children}
+        </AuthContext.Provider>
+    );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+    const context = useContext(AuthContext);
+    if (!context) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
+};
