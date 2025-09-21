@@ -135,9 +135,16 @@ export const AuthProvider = ({ children }) => {
 
     const signup = async (name, email, password, confirmPassword) => {
         try {
-            await axios.post(`${API_BASE_URL}/api/auth/signup`, { name, email, password, confirmPassword });
-            toast.success("Account created successfully! Logging you in...");
-            await login(email, password);
+            const response = await axios.post(`${API_BASE_URL}/api/auth/signup`, { name, email, password, confirmPassword });
+            const { token, id, roles } = response.data;
+            const userData = { id, email, name, roles };
+            localStorage.setItem('token', token);
+            localStorage.setItem('user', JSON.stringify(userData));
+            setIsLoggedIn(true);
+            setUser(userData);
+            toast.success(`Welcome, ${name}!`);
+            if (roles?.includes('ROLE_ADMIN')) navigate('/admin/list');
+            else navigate('/');
         } catch (error) {
             toast.error(error.response?.data?.message || 'Signup failed.');
             throw error;
@@ -218,4 +225,3 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
-
