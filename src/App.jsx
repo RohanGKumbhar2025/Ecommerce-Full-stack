@@ -12,6 +12,7 @@ import ProductsPage from './pages/ProductsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
+import CategoriesPage from './pages/CategoriesPage';
 import CartPage from './pages/CartPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -151,6 +152,7 @@ function AppContent() {
                     <Route path="/products/:id" element={<ProductDetailPage onAddToCart={handleAddToCart} onToggleWishlist={handleToggleWishlist} wishlistIds={wishlistIds} cart={cart} pendingOperations={pendingOperations} />} />
                     <Route path="/about" element={<AboutPage />} />
                     <Route path="/contact" element={<ContactPage />} />
+                    <Route path="/categories" element={<CategoriesPage />} />
                     
                     {/* Private Routes */}
                     <Route path="/wishlist" element={<PrivateRoute><WishlistPage onAddToCart={handleAddToCart} onToggleWishlist={handleToggleWishlist} cart={cart} pendingOperations={pendingOperations} /></PrivateRoute>} />

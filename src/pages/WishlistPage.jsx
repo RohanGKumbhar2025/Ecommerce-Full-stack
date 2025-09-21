@@ -23,6 +23,7 @@ const WishlistItemSkeleton = () => (
 
 const WishlistPage = ({ onAddToCart, onToggleWishlist, cart, pendingOperations, pendingWishlistOperations }) => {
     // Get wishlist data and the function to refresh it from the context
+    // The `wishlistItems` from context is now always up-to-date and efficiently loaded
     const { wishlistItems, fetchUserData } = useAuth();
     const [refreshing, setRefreshing] = useState(false);
 

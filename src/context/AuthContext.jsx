@@ -18,13 +18,15 @@ export const AuthProvider = ({ children }) => {
     const [wishlistItems, setWishlistItems] = useState([]);
     const [wishlistIds, setWishlistIds] = useState(new Set());
 
-    // --- Your Existing Functionality (Preserved) ---
+    // Consolidated Product State
     const [products, setProducts] = useState([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
-    const [paginatedProducts, setPaginatedProducts] = useState([]);
     const [productPageData, setProductPageData] = useState({ totalPages: 0, totalElements: 0 });
-    const [loadingPaginatedProducts, setLoadingPaginatedProducts] = useState(true);
-    const [productCache, setProductCache] = useState(new Map());
+    
+    // --- Caching States ---
+    const [productDetailCache, setProductDetailCache] = useState(new Map());
+    const [pageCache, setPageCache] = useState(new Map());
+
 
     // Initialize state from storage
     useEffect(() => {
@@ -37,9 +39,13 @@ export const AuthProvider = ({ children }) => {
                     setIsLoggedIn(true);
                 }
             }
-            const cachedProductCache = sessionStorage.getItem("productCache");
-            if (cachedProductCache) {
-                setProductCache(new Map(JSON.parse(cachedProductCache)));
+            const cachedDetails = sessionStorage.getItem("productDetailCache");
+            if (cachedDetails) {
+                setProductDetailCache(new Map(JSON.parse(cachedDetails)));
+            }
+            const cachedPages = sessionStorage.getItem("pageCache");
+            if (cachedPages) {
+                setPageCache(new Map(JSON.parse(cachedPages)));
             }
         } catch (error) {
             console.error("Error initializing state from storage:", error);
@@ -50,28 +56,27 @@ export const AuthProvider = ({ children }) => {
         }
     }, []);
 
-    // Your function to get product details with caching
     const getProductDetails = useCallback(async (productId) => {
-        if (productCache.has(productId)) {
-            const cached = productCache.get(productId);
+        const cacheKey = productId.toString();
+        if (productDetailCache.has(cacheKey)) {
+            const cached = productDetailCache.get(cacheKey);
             if (Date.now() - cached.timestamp < 300000) { // 5-minute cache TTL
                 return cached.data;
             }
         }
         try {
             const { data } = await axios.get(`${API_BASE_URL}/api/products/${productId}`);
-            const newCache = new Map(productCache);
-            newCache.set(productId, { data, timestamp: Date.now() });
-            setProductCache(newCache);
-            sessionStorage.setItem("productCache", JSON.stringify([...newCache]));
+            const newCache = new Map(productDetailCache);
+            newCache.set(cacheKey, { data, timestamp: Date.now() });
+            setProductDetailCache(newCache);
+            sessionStorage.setItem("productDetailCache", JSON.stringify([...newCache]));
             return data;
         } catch (error) {
             console.error(`Failed to fetch product ${productId}:`, error);
             return null;
         }
-    }, [productCache]);
+    }, [productDetailCache]);
 
-    // Your function to fetch user data (cart and wishlist)
     const fetchUserData = useCallback(async () => {
         if (!isLoggedIn) {
             setCart([]);
@@ -128,12 +133,11 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    // ✅ FIXED: Auto-login after signup is now correctly implemented
     const signup = async (name, email, password, confirmPassword) => {
         try {
             await axios.post(`${API_BASE_URL}/api/auth/signup`, { name, email, password, confirmPassword });
             toast.success("Account created successfully! Logging you in...");
-            await login(email, password); // This will handle setting state and navigation
+            await login(email, password);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Signup failed.');
             throw error;
@@ -148,51 +152,64 @@ export const AuthProvider = ({ children }) => {
         setCart([]);
         setWishlistItems([]);
         setWishlistIds(new Set());
-        setProductCache(new Map()); // Clear cache on logout
+        setProductDetailCache(new Map());
+        setPageCache(new Map()); // Clear page cache on logout
         toast.info("You have been logged out.");
         navigate('/login');
     };
     
-    // --- Preserving Your Other Functions ---
-    const fetchProducts = useCallback(async () => {
-        // Your implementation from the provided code...
-        if (products.length === 0) setLoadingProducts(true);
+    const fetchProducts = useCallback(async (params = { page: 0, size: 9 }) => {
+        const cacheKey = JSON.stringify(params);
+
+        if (pageCache.has(cacheKey)) {
+            const cached = pageCache.get(cacheKey);
+            if (Date.now() - cached.timestamp < 300000) { // 5-minute cache TTL
+                setProducts(cached.data.content);
+                setProductPageData({
+                    totalPages: cached.data.totalPages,
+                    totalElements: cached.data.totalElements,
+                });
+                setLoadingProducts(false);
+                return;
+            }
+        }
+
+        setLoadingProducts(true);
         try {
-            const response = await axios.get(`${API_BASE_URL}/api/products?size=8`);
-            if (response.data?.content) setProducts(response.data.content);
+            const response = await axios.get(`${API_BASE_URL}/api/products`, { params });
+            const data = response.data;
+            if (data?.content) {
+                setProducts(data.content);
+                setProductPageData({
+                    totalPages: data.totalPages || 0,
+                    totalElements: data.totalElements || 0,
+                });
+
+                const newCache = new Map(pageCache);
+                newCache.set(cacheKey, { data, timestamp: Date.now() });
+                setPageCache(newCache);
+                sessionStorage.setItem("pageCache", JSON.stringify([...newCache]));
+            }
         } catch (error) {
-            console.error("Failed to fetch products for cache:", error);
+            console.error("Failed to fetch products:", error);
+            setProducts([]);
         } finally {
             setLoadingProducts(false);
         }
-    }, [products.length]);
-
-    const fetchPaginatedProducts = useCallback(async (params) => {
-        // Your implementation from the provided code...
-        setLoadingPaginatedProducts(true);
-        try {
-            const response = await axios.get(`${API_BASE_URL}/api/products`, { params });
-            setPaginatedProducts(response.data.content || []);
-            setProductPageData({
-                totalPages: response.data.totalPages || 0,
-                totalElements: response.data.totalElements || 0,
-            });
-        } catch (error) {
-            console.error("Failed to fetch paginated products:", error);
-            setPaginatedProducts([]);
-        } finally {
-            setLoadingPaginatedProducts(false);
-        }
-    }, []);
+    }, [pageCache]);
 
     useEffect(() => {
-        fetchProducts();
-    }, [fetchProducts]);
+        // This initial fetch is primarily for the home page's featured products.
+        // The ProductsPage will trigger its own fetches with its specific parameters.
+        if (products.length === 0) {
+            fetchProducts({ page: 0, size: 8, sort: 'rating-desc' });
+        }
+    }, [fetchProducts, products.length]);
 
     const value = {
         isLoggedIn, user, loading, cart, setCart, login, logout, signup,
         products, loadingProducts, fetchProducts,
-        paginatedProducts, productPageData, loadingPaginatedProducts, fetchPaginatedProducts,
+        productPageData,
         wishlistItems, setWishlistItems, wishlistIds, setWishlistIds,
         getProductDetails, fetchUserData
     };
@@ -201,3 +218,4 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
+
