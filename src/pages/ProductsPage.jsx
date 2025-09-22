@@ -18,6 +18,8 @@ import ProductListItem from "../components/ProductListItem";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "react-toastify";
 
+// --- (Skeleton and other components remain the same) ---
+
 /* ============================
    Loading Skeletons
    ============================ */
@@ -208,10 +210,17 @@ const MobileFilterModal = ({ isOpen, onClose, children }) => {
   );
 };
 
+
 /* ============================
    Main Products Page Component
    ============================ */
-const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), cart }) => {
+const ProductsPage = ({ 
+  onAddToCart, 
+  onToggleWishlist, 
+  wishlistIds = new Set(), 
+  cart = [],
+  pendingOperations = new Set()
+}) => {
   const {
     products,
     productPageData,
@@ -225,114 +234,49 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
   const navigate = useNavigate();
   
   // State management
-  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || "");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
-  const [viewMode, setViewMode] = useState(() => {
-    const stored = localStorage.getItem('viewMode');
-    return stored || "grid";
-  });
-  const [currentPage, setCurrentPage] = useState(parseInt(searchParams.get('page')) || 1);
-  const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || null);
-  const [priceRange, setPriceRange] = useState([
-    parseInt(searchParams.get('minPrice')) || 0,
-    parseInt(searchParams.get('maxPrice')) || 1000
-  ]);
-  const [sortOrder, setSortOrder] = useState(searchParams.get('sort') || "rating-desc");
-  const [showNew, setShowNew] = useState(searchParams.get('new') === 'true');
-  const [showSale, setShowSale] = useState(searchParams.get('sale') === 'true');
-  const [showWishlist, setShowWishlist] = useState(searchParams.get('wishlist') === 'true');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('viewMode') || "grid");
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [error, setError] = useState(null);
   
-  const debounceTimer = useRef(null);
-
-  // Debounce search term
-  useEffect(() => {
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current);
-    }
-    
-    debounceTimer.current = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
-    
-    return () => {
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-      }
-    };
-  }, [searchTerm]);
+  // ✅ FIX: State is now derived directly from URL search params for reliability
+  const searchTerm = searchParams.get('search') || "";
+  const currentPage = parseInt(searchParams.get('page')) || 1;
+  const selectedCategory = searchParams.get('category') ? Number(searchParams.get('category')) : null;
+  const priceRange = [
+    parseInt(searchParams.get('minPrice')) || 0,
+    parseInt(searchParams.get('maxPrice')) || 1000
+  ];
+  const sortOrder = searchParams.get('sort') || "rating-desc";
+  const showNew = searchParams.get('new') === 'true';
+  const showSale = searchParams.get('sale') === 'true';
+  const showWishlist = searchParams.get('wishlist') === 'true';
 
   // Get category name for display
   const selectedCategoryName = useMemo(() => {
     if (!selectedCategory || !categories.length) return null;
-    const category = categories.find(cat => cat.id.toString() === selectedCategory.toString());
+    const category = categories.find(cat => cat.id === selectedCategory);
     return category?.name || searchParams.get('name') || 'Selected Category';
   }, [selectedCategory, categories, searchParams]);
 
   // Update URL params
-  const updateURLParams = useCallback((updates) => {
+  const updateURLParams = useCallback((newValues) => {
     const newParams = new URLSearchParams(searchParams);
     
-    Object.entries(updates).forEach(([key, value]) => {
-      if (value === null || value === undefined || value === "" || value === false) {
+    // Set page to 1 for any filter change
+    if (Object.keys(newValues).some(k => k !== 'page')) {
+      newParams.set('page', '1');
+    }
+
+    Object.entries(newValues).forEach(([key, value]) => {
+      if (value === null || value === "" || value === false) {
         newParams.delete(key);
       } else {
         newParams.set(key, value.toString());
       }
     });
     
-    setSearchParams(newParams);
+    setSearchParams(newParams, { replace: true });
   }, [searchParams, setSearchParams]);
-
-  // Reset page when filters change
-  const resetPageAndUpdateFilters = useCallback((updates) => {
-    setCurrentPage(1);
-    updateURLParams({ ...updates, page: 1 });
-  }, [updateURLParams]);
-
-  // Filter change handlers
-  const handleSearchChange = useCallback((value) => {
-    setSearchTerm(value);
-  }, []);
-
-  useEffect(() => {
-    if (debouncedSearchTerm !== (searchParams.get('search') || "")) {
-      resetPageAndUpdateFilters({ search: debouncedSearchTerm });
-    }
-  }, [debouncedSearchTerm, searchParams, resetPageAndUpdateFilters]);
-
-  const handleCategorySelect = useCallback((categoryId) => {
-    setSelectedCategory(categoryId);
-    resetPageAndUpdateFilters({ category: categoryId });
-  }, [resetPageAndUpdateFilters]);
-
-  const handlePriceRangeChange = useCallback((range) => {
-    setPriceRange(range);
-    resetPageAndUpdateFilters({ minPrice: range[0], maxPrice: range[1] });
-  }, [resetPageAndUpdateFilters]);
-
-  const handleSortChange = useCallback((sort) => {
-    setSortOrder(sort);
-    resetPageAndUpdateFilters({ sort });
-  }, [resetPageAndUpdateFilters]);
-
-  const handleQuickFilterChange = useCallback((filterName, value) => {
-    switch (filterName) {
-      case 'showNew':
-        setShowNew(value);
-        resetPageAndUpdateFilters({ new: value });
-        break;
-      case 'showSale':
-        setShowSale(value);
-        resetPageAndUpdateFilters({ sale: value });
-        break;
-      case 'showWishlist':
-        setShowWishlist(value);
-        resetPageAndUpdateFilters({ wishlist: value });
-        break;
-    }
-  }, [resetPageAndUpdateFilters]);
 
   // Save view mode preference
   useEffect(() => {
@@ -346,22 +290,26 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
     }
   }, [categories.length, fetchCategories]);
 
-  // Fetch products when filters change
+  // ✅ CRITICAL FIX: The main useEffect hook now correctly depends on `searchParams`.
+  // This ensures it re-runs and fetches new data every time the URL changes.
   useEffect(() => {
     const fetchData = async () => {
       setError(null);
       
       const params = {
-        page: currentPage - 1,
+        page: (parseInt(searchParams.get('page')) || 1) - 1,
         size: 9,
-        sort: sortOrder,
-        ...(debouncedSearchTerm && { searchTerm: debouncedSearchTerm }),
-        ...(selectedCategory && { categoryId: selectedCategory }),
-        minPrice: priceRange[0],
-        maxPrice: priceRange[1],
-        ...(showNew && { isNew: true }),
-        ...(showSale && { onSale: true }),
+        sort: searchParams.get('sort') || "rating-desc",
+        searchTerm: searchParams.get('search') || undefined,
+        categoryId: searchParams.get('category') || undefined,
+        minPrice: searchParams.get('minPrice') || undefined,
+        maxPrice: searchParams.get('maxPrice') || undefined,
+        isNew: searchParams.get('new') === 'true' || undefined,
+        onSale: searchParams.get('sale') === 'true' || undefined,
       };
+
+      // Remove undefined keys
+      Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
 
       const result = await fetchProducts(params);
       
@@ -370,53 +318,23 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
       }
     };
 
-    const timeoutId = setTimeout(fetchData, 300);
-    return () => clearTimeout(timeoutId);
-  }, [currentPage, sortOrder, debouncedSearchTerm, selectedCategory, priceRange, showNew, showSale, fetchProducts]);
+    fetchData();
+  }, [searchParams, fetchProducts]); // ✅ FIX: Added `searchParams` to dependency array.
 
   // Handle page change
   const handlePageChange = useCallback((newPage) => {
-    if (newPage > 0 && newPage <= productPageData.totalPages && newPage !== currentPage) {
-      setCurrentPage(newPage);
+    if (newPage > 0 && newPage <= productPageData.totalPages) {
       updateURLParams({ page: newPage });
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, [currentPage, productPageData.totalPages, updateURLParams]);
+  }, [productPageData.totalPages, updateURLParams]);
 
   // Clear all filters
   const clearAllFilters = useCallback(() => {
-    setSearchTerm("");
-    setDebouncedSearchTerm("");
-    setSelectedCategory(null);
-    setPriceRange([0, 1000]);
-    setSortOrder("rating-desc");
-    setShowNew(false);
-    setShowSale(false);
-    setShowWishlist(false);
-    setCurrentPage(1);
     setError(null);
-    
-    setSearchParams(new URLSearchParams());
+    setSearchParams(new URLSearchParams(), { replace: true });
     toast.info("All filters cleared!");
   }, [setSearchParams]);
-
-  // Retry function
-  const handleRetry = useCallback(() => {
-    setError(null);
-    const params = {
-      page: currentPage - 1,
-      size: 9,
-      sort: sortOrder,
-      ...(debouncedSearchTerm && { searchTerm: debouncedSearchTerm }),
-      ...(selectedCategory && { categoryId: selectedCategory }),
-      minPrice: priceRange[0],
-      maxPrice: priceRange[1],
-      ...(showNew && { isNew: true }),
-      ...(showSale && { onSale: true }),
-    };
-    
-    fetchProducts(params);
-  }, [currentPage, sortOrder, debouncedSearchTerm, selectedCategory, priceRange, showNew, showSale, fetchProducts]);
 
   // Get displayed products
   const displayedProducts = useMemo(() => {
@@ -426,7 +344,6 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
     return products;
   }, [products, showWishlist, wishlistIds]);
 
-  // Loading and error states
   const isInitialLoading = loadingProducts && products.length === 0;
 
   return (
@@ -442,7 +359,7 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                 </h1>
                 {selectedCategoryName && (
                   <button
-                    onClick={() => handleCategorySelect(null)}
+                    onClick={() => updateURLParams({ category: null, name: null })}
                     className="text-sm text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-1 rounded-full transition-colors"
                   >
                     ✕ Clear
@@ -455,13 +372,20 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                 <input
                   type="text"
                   placeholder="Search products..."
-                  value={searchTerm}
-                  onChange={(e) => handleSearchChange(e.target.value)}
+                  defaultValue={searchTerm} // Use defaultValue for uncontrolled input with debounce
+                  onChange={(e) => {
+                    const newSearchTerm = e.target.value;
+                    // Debounced update
+                    const timer = setTimeout(() => {
+                      updateURLParams({ search: newSearchTerm });
+                    }, 500);
+                    return () => clearTimeout(timer);
+                  }}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
                 />
                 {searchTerm && (
                   <button
-                    onClick={() => handleSearchChange("")}
+                    onClick={() => updateURLParams({ search: "" })}
                     className="text-gray-400 hover:text-gray-600 absolute right-3 top-1/2 -translate-y-1/2"
                   >
                     <X size={16} />
@@ -487,17 +411,17 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
             <FilterSidebar
               categories={categories}
               selectedCategory={selectedCategory}
-              onCategorySelect={handleCategorySelect}
+              onCategorySelect={(id) => updateURLParams({ category: id })}
               priceRange={priceRange}
-              setPriceRange={handlePriceRangeChange}
+              setPriceRange={(range) => updateURLParams({ minPrice: range[0], maxPrice: range[1] })}
               sortOrder={sortOrder}
-              setSortOrder={handleSortChange}
+              setSortOrder={(sort) => updateURLParams({ sort })}
               showNew={showNew}
-              setShowNew={(value) => handleQuickFilterChange('showNew', value)}
+              setShowNew={(val) => updateURLParams({ new: val })}
               showSale={showSale}
-              setShowSale={(value) => handleQuickFilterChange('showSale', value)}
+              setShowSale={(val) => updateURLParams({ sale: val })}
               showWishlist={showWishlist}
-              setShowWishlist={(value) => handleQuickFilterChange('showWishlist', value)}
+              setShowWishlist={(val) => updateURLParams({ wishlist: val })}
               onClearAll={clearAllFilters}
             />
           </div>
@@ -510,20 +434,20 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
             <FilterSidebar
               categories={categories}
               selectedCategory={selectedCategory}
-              onCategorySelect={(categoryId) => {
-                handleCategorySelect(categoryId);
+              onCategorySelect={(id) => {
+                updateURLParams({ category: id });
                 setIsMobileFilterOpen(false);
               }}
               priceRange={priceRange}
-              setPriceRange={handlePriceRangeChange}
+              setPriceRange={(range) => updateURLParams({ minPrice: range[0], maxPrice: range[1] })}
               sortOrder={sortOrder}
-              setSortOrder={handleSortChange}
+              setSortOrder={(sort) => updateURLParams({ sort })}
               showNew={showNew}
-              setShowNew={(value) => handleQuickFilterChange('showNew', value)}
+              setShowNew={(val) => updateURLParams({ new: val })}
               showSale={showSale}
-              setShowSale={(value) => handleQuickFilterChange('showSale', value)}
+              setShowSale={(val) => updateURLParams({ sale: val })}
               showWishlist={showWishlist}
-              setShowWishlist={(value) => handleQuickFilterChange('showWishlist', value)}
+              setShowWishlist={(val) => updateURLParams({ wishlist: val })}
               onClearAll={() => {
                 clearAllFilters();
                 setIsMobileFilterOpen(false);
@@ -531,6 +455,7 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
               isMobile={true}
             />
           </MobileFilterModal>
+
 
           {/* Products Content */}
           <div className="lg:col-span-3">
@@ -550,14 +475,6 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                     </>
                   )}
                 </span>
-                {(searchTerm || selectedCategory) && (
-                  <button
-                    onClick={clearAllFilters}
-                    className="ml-4 text-sm text-red-600 hover:text-red-800 transition-colors"
-                  >
-                    Clear all filters
-                  </button>
-                )}
               </div>
               
               <div className="flex items-center gap-3">
@@ -604,7 +521,7 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
               {error && !loadingProducts ? (
                 <ErrorState
                   message={error}
-                  onRetry={handleRetry}
+                  onRetry={clearAllFilters}
                 />
               ) : isInitialLoading ? (
                 /* Initial Loading Skeletons */
@@ -640,6 +557,7 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                           onToggleWishlist={onToggleWishlist}
                           isWishlisted={wishlistIds.has(product.id)}
                           cart={cart}
+                          isPending={pendingOperations.has(product.id)}
                         />
                       ) : (
                         <ProductListItem
@@ -649,6 +567,7 @@ const ProductsPage = ({ onAddToCart, onToggleWishlist, wishlistIds = new Set(), 
                           onToggleWishlist={onToggleWishlist}
                           isWishlisted={wishlistIds.has(product.id)}
                           cart={cart}
+                          isPending={pendingOperations.has(product.id)}
                         />
                       )
                     )}

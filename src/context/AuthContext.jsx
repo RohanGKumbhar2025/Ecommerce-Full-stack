@@ -85,21 +85,25 @@ export const AuthProvider = ({ children }) => {
 
     // Fetch categories
     const fetchCategories = useCallback(async () => {
-        if (loadingCategories || categories.length > 0) return;
+        if (loadingCategories || categories.length > 0) return { success: true, data: categories };
         
         setLoadingCategories(true);
         try {
             const response = await retryRequest(() =>
                 axios.get(`${API_BASE_URL}/api/categories`, { timeout: 45000 })
             );
-            setCategories(response.data || []);
+            const categoriesData = response.data || [];
+            setCategories(categoriesData);
+            return { success: true, data: categoriesData };
         } catch (error) {
             console.error('Failed to fetch categories:', error);
-            toast.error('Failed to load categories');
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to load categories';
+            toast.error(errorMessage);
+            return { success: false, error: errorMessage };
         } finally {
             setLoadingCategories(false);
         }
-    }, [categories.length, loadingCategories]);
+    }, [categories.length, loadingCategories]); // ✅ FIX: Dependencies were sufficient here, but good practice to check all.
 
     // Fetch products with caching
     const fetchProducts = useCallback(async (params = { page: 0, size: 9 }) => {
@@ -155,6 +159,7 @@ export const AuthProvider = ({ children }) => {
 
         } catch (error) {
             console.error('Failed to fetch products:', error);
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to load products';
             
             // Try cache as fallback
             if (pageCache.has(cacheKey)) {
@@ -170,11 +175,12 @@ export const AuthProvider = ({ children }) => {
             
             setProducts([]);
             setProductPageData({ totalPages: 0, totalElements: 0 });
-            return { success: false, error: error.message };
+            return { success: false, error: errorMessage };
         } finally {
             setLoadingProducts(false);
         }
-    }, [pageCache]);
+    // ✅ FIX: Added all external state and setters to the dependency array
+    }, [pageCache, setProducts, setProductPageData, setPageCache]);
 
     // Get product details with caching
     const getProductDetails = useCallback(async (productId) => {
@@ -220,10 +226,12 @@ export const AuthProvider = ({ children }) => {
                 return cached.data;
             }
             
-            toast.error('Failed to load product details');
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to load product details';
+            toast.error(errorMessage);
             return null; // Return null on error
         }
-    }, [productCache]);
+    // ✅ FIX: Added all external state and setters to the dependency array
+    }, [productCache, setProductCache]);
 
     // Fetch user data (cart and wishlist)
     const fetchUserData = useCallback(async () => {
@@ -231,7 +239,7 @@ export const AuthProvider = ({ children }) => {
             setCart([]);
             setWishlistItems([]);
             setWishlistIds(new Set());
-            return;
+            return { success: true };
         }
 
         const token = localStorage.getItem('token');
@@ -250,21 +258,35 @@ export const AuthProvider = ({ children }) => {
             // Handle cart
             if (cartResponse.status === 'fulfilled') {
                 const cartItems = Array.isArray(cartResponse.value.data) ? cartResponse.value.data : [];
-                setCart(cartItems.map(item => ({ ...item, id: item.productId })));
+                setCart(cartItems.map(item => ({ ...item, id: item.productId || item.id })));
+            } else {
+                console.error('Failed to fetch cart:', cartResponse.reason);
+                setCart([]);
             }
 
             // Handle wishlist
             if (wishlistResponse.status === 'fulfilled') {
                 const wishlistItems = Array.isArray(wishlistResponse.value.data) ? wishlistResponse.value.data : [];
                 setWishlistItems(wishlistItems);
-                setWishlistIds(new Set(wishlistItems.map(item => item.id)));
+                // Force re-render by creating new Set
+                const newWishlistIds = new Set(wishlistItems.map(item => item.id));
+                setWishlistIds(newWishlistIds);
+            } else {
+                console.error('Failed to fetch wishlist:', wishlistResponse.reason);
+                setWishlistItems([]);
+                setWishlistIds(new Set());
             }
+
+            return { success: true };
 
         } catch (error) {
             console.error('Failed to fetch user data:', error);
-            toast.error('Failed to sync user data');
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to sync user data';
+            toast.error(errorMessage);
+            return { success: false, error: errorMessage };
         }
-    }, [isLoggedIn]);
+    // ✅ FIX: Added all external state and setters to the dependency array
+    }, [isLoggedIn, setCart, setWishlistItems, setWishlistIds]);
 
     // Auth functions
     const login = async (email, password) => {
@@ -294,7 +316,7 @@ export const AuthProvider = ({ children }) => {
             setTimeout(() => fetchUserData(), 1000);
 
         } catch (error) {
-            const errorMessage = error.response?.data?.message || 'Login failed. Please try again.';
+            const errorMessage = error.response?.data?.message || error.message || 'Login failed. Please try again.';
             toast.error(errorMessage);
             throw error;
         }
@@ -329,7 +351,7 @@ export const AuthProvider = ({ children }) => {
             setTimeout(() => fetchUserData(), 1000);
 
         } catch (error) {
-            const errorMessage = error.response?.data?.message || 'Signup failed. Please try again.';
+            const errorMessage = error.response?.data?.message || error.message || 'Signup failed. Please try again.';
             toast.error(errorMessage);
             throw error;
         }

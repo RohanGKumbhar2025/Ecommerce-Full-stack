@@ -4,6 +4,23 @@ import { Tag, ArrowRight, Loader2, ShoppingBag, Sparkles } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
 
+const categoryImages = {
+    'Jewelry & Watches': 'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Clothing': 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Beauty': 'https://images.unsplash.com/photo-1522338242992-e1a54906a8da?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Health and Medicine': 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Sports & Outdoor': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Personal Care': 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Cell Phones & Accessories': 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    "Men's": 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Home & Living': 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    'Electronics': 'https://images.unsplash.com/photo-1498049794561-7780e7231661?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+};
+
+const getCategoryImage = (categoryName) => {
+    return categoryImages[categoryName] || 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+};
+
 // Enhanced Loading Skeleton with animation
 const CategoryCardSkeleton = () => (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden animate-pulse">
@@ -31,7 +48,7 @@ const CategoryCard = ({ category, onClick, isLoading }) => (
     >
         <div className="relative aspect-[4/3] overflow-hidden">
             <img 
-                src={category.imageUrl} 
+                src={getCategoryImage(category.name)} 
                 alt={category.name} 
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                 loading="lazy"
